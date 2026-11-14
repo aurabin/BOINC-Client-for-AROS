@@ -102,4 +102,3 @@ jobs:
             BOINC/config.log
             build/bin/pc-x86_64/gen/contrib/development/libs/curl/**/config.log
             build/bin/pc-x86_64/Ports/**/config.log
-            build/bin/pc-x86_64/gen/contrib/development/libs/curl/**/config.log
