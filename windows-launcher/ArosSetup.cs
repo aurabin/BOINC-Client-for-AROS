@@ -29,11 +29,12 @@ internal static class ArosSetup
             {
                 case "--update": options += " -Update"; break;
                 case "--offline-iso": options += " -OfflineIso"; break;
+                case "--chatgpt": options += " -ChatGPT"; break;
                 case "--windows-desktop": options += " -WindowsDesktop"; break;
                 case "--share": options += " -ShareWindowsFiles"; shareWindowsFiles = true; break;
                 case "--share-write": writableShare = true; break;
                 default:
-                    Console.Error.WriteLine("Usage: AROS-Setup-x64.exe [--update | --offline-iso | --share | --share-write | --windows-desktop]");
+                    Console.Error.WriteLine("Usage: AROS-Setup-x64.exe [--update | --offline-iso | --share | --share-write | --windows-desktop | --chatgpt]");
                     return 2;
             }
         }

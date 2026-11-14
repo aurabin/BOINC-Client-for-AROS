@@ -6,7 +6,8 @@ param(
     [switch]$WindowsDesktop,
     [ValidateRange(1, 65535)][int]$DesktopPort = 5900,
     [switch]$OfflineIso,
-    [string]$IsoPath
+    [string]$IsoPath,
+    [switch]$ChatGPT
 )
 
 $ErrorActionPreference = 'Stop'
@@ -98,6 +99,86 @@ function Assert-ShareHasNoLinks([IO.DirectoryInfo]$Folder) {
         }
         if ($item.PSIsContainer) { Assert-ShareHasNoLinks $item }
     }
+}
+
+$chatBridge = {
+    param([string]$ReadyPath)
+    $ErrorActionPreference = 'Stop'
+    $encoding = [Text.Encoding]::GetEncoding(28591)
+    $model = $env:OPENAI_MODEL
+    if (!$model) { $model = 'gpt-4.1-mini' }
+    $headers = @{ Authorization = 'Bearer ' + $env:OPENAI_API_KEY }
+    $listener = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, 0)
+    $client = $null
+    try {
+        $listener.Start()
+        [IO.File]::WriteAllText($ReadyPath, [string]$listener.LocalEndpoint.Port)
+        $client = $listener.AcceptTcpClient()
+        $listener.Stop()
+        $stream = $client.GetStream()
+        $reader = [IO.StreamReader]::new($stream, $encoding, $false)
+        $history = @()
+        while ($true) {
+            $line = [Text.StringBuilder]::new()
+            while (($value = $reader.Read()) -ne -1 -and $value -ne 10) {
+                if ($line.Length -ge 4000) { return }
+                [void]$line.Append([char]$value)
+            }
+            if ($value -eq -1) { return }
+            $prompt = $line.ToString().Trim()
+            if (!$prompt) { continue }
+            if ($prompt -eq '/reset') {
+                $history = @()
+                $answer = 'Neue Unterhaltung.'
+            } else {
+                $inputMessages = @($history) + @{ role = 'user'; content = $prompt }
+                $body = @{
+                    model = $model
+                    input = $inputMessages
+                    max_output_tokens = 700
+                    store = $false
+                } | ConvertTo-Json -Depth 6 -Compress
+                try {
+                    $response = Invoke-RestMethod -Method Post -Uri 'https://api.openai.com/v1/responses' `
+                        -Headers $headers -ContentType 'application/json; charset=utf-8' `
+                        -Body ([Text.Encoding]::UTF8.GetBytes($body)) -TimeoutSec 60
+                    $answer = @(
+                        foreach ($item in $response.output) {
+                            if ($item.type -ne 'message') { continue }
+                            foreach ($part in $item.content) {
+                                if ($part.type -eq 'output_text') { $part.text }
+                                if ($part.type -eq 'refusal') { $part.refusal }
+                            }
+                        }
+                    ) -join "`n"
+                    if (!$answer) { $answer = 'OpenAI hat keine Textantwort geliefert.' }
+                    $history = @($inputMessages + @{ role = 'assistant'; content = $answer } |
+                        Select-Object -Last 8)
+                } catch {
+                    $status = $_.Exception.Response
+                    $answer = 'OpenAI-Anfrage fehlgeschlagen. Pruefe die Windows-Internetverbindung.'
+                    if ($status) {
+                        $answer = 'OpenAI-Anfrage fehlgeschlagen (HTTP ' + [int]$status.StatusCode + ').'
+                    }
+                }
+            }
+            $answer = $answer -replace '[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]', ''
+            $bytes = $encoding.GetBytes($answer)
+            $size = [Text.Encoding]::ASCII.GetBytes([string]$bytes.Length + "`n")
+            $stream.Write($size, 0, $size.Length)
+            $stream.Write($bytes, 0, $bytes.Length)
+        }
+    } finally {
+        if ($client) { $client.Dispose() }
+        $listener.Stop()
+    }
+}
+
+if ($ChatGPT -and ($Update -or $SetupOnly)) {
+    throw '-ChatGPT benoetigt einen normalen VM-Start.'
+}
+if ($ChatGPT -and [string]::IsNullOrWhiteSpace($env:OPENAI_API_KEY)) {
+    throw 'Setze OPENAI_API_KEY unter Windows, bevor du den Chat startest.'
 }
 
 if ($WritableShare -and !$ShareWindowsFiles) {
@@ -209,10 +290,27 @@ try {
     }
     if ($SetupOnly) { return }
 
-    $network = 'none'
+    $forwarding = @()
     if ($WindowsDesktop) {
-        $network = "user,model=rtl8139,restrict=on,guestfwd=tcp:10.0.2.100:5900-tcp:127.0.0.1:$DesktopPort"
+        $forwarding += "guestfwd=tcp:10.0.2.100:5900-tcp:127.0.0.1:$DesktopPort"
         Write-Host 'Windows-Desktop: VNC-Client in AROS mit 10.0.2.100:5900 verbinden.'
+    }
+    if ($ChatGPT) {
+        $chatReady = Join-Path $data ([guid]::NewGuid().ToString('N') + '.chat-port')
+        $chatJob = Start-Job -ScriptBlock $chatBridge -ArgumentList $chatReady
+        $deadline = [DateTime]::UtcNow.AddSeconds(15)
+        do {
+            Start-Sleep -Milliseconds 150
+            $chatPort = Get-Content -LiteralPath $chatReady -ErrorAction SilentlyContinue
+        } until ($chatPort -match '^[0-9]+$' -or $chatJob.State -in 'Completed', 'Failed', 'Stopped' -or
+            [DateTime]::UtcNow -ge $deadline)
+        if ($chatPort -notmatch '^[0-9]+$') { throw 'ChatGPT-Verbindung konnte nicht gestartet werden.' }
+        $forwarding += "guestfwd=tcp:10.0.2.100:16811-tcp:127.0.0.1:$chatPort"
+        Write-Host 'ChatGPT for AROS: Netzwerk in AROS starten und ChatGPT in AROS ausfuehren.'
+    }
+    $network = 'none'
+    if ($forwarding.Count) {
+        $network = 'user,model=rtl8139,restrict=on,' + ($forwarding -join ',')
     }
     $qemuArgs = @('-m', '1024', '-boot', 'd', '-cdrom', $iso, '-nic', $network)
     if ($ShareWindowsFiles) {
@@ -227,9 +325,17 @@ try {
         $qemuArgs += @('-usb', '-drive', $drive, '-device', 'usb-storage,drive=winshare')
         Write-Host "Windows-Austauschordner: $share"
     }
-    & $qemu @qemuArgs
+    $savedApiKey = $env:OPENAI_API_KEY
+    try {
+        Remove-Item Env:OPENAI_API_KEY -ErrorAction SilentlyContinue
+        & $qemu @qemuArgs
+    } finally {
+        if ($null -ne $savedApiKey) { $env:OPENAI_API_KEY = $savedApiKey }
+    }
     if ($LASTEXITCODE -ne 0) { throw "QEMU endete mit Fehlercode $LASTEXITCODE." }
 } finally {
+    if ($chatJob) { Remove-Job -Job $chatJob -Force }
+    if ($chatReady) { Remove-Item -LiteralPath $chatReady -ErrorAction SilentlyContinue }
     $lock.Dispose()
 }
 

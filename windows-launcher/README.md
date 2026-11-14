@@ -34,12 +34,23 @@ The desktop gives you mouse and keyboard control. Open Explorer for files, launc
 
 This mode adds one QEMU guest-to-host forwarding rule. General network access stays disabled in this mode. Without the desktop option, QEMU has no network adapter. The launcher does not install a server or a viewer. Restart the VM if the VNC connection drops and the viewer cannot reconnect.
 
+## ChatGPT for AROS
+
+`guest/ChatGPT.c` is a native AROS x86-64 ABIv11 application. It opens its own AROS console window and retains the last four turns in Windows memory while the VM runs. It uses the OpenAI Responses API with separate API billing and does not sign in to a ChatGPT web account.
+
+1. Build the guest program with the ABIv11 SDK from AROShell: `gcc -std=c99 -O2 -Wall -Wextra -o ChatGPT ChatGPT.c`. With an ABIv11 cross-toolchain, use its target GCC instead. Copy the executable to the AROS machine, for example via the exchange folder.
+2. Set `OPENAI_API_KEY` in the Windows environment before launching. Optionally set `OPENAI_MODEL` to select another Responses API model. The default is `gpt-4.1-mini`.
+3. Start `AROS-ChatGPT.cmd`. Add `-OfflineIso` to pick an existing ISO or `-ShareWindowsFiles` to attach the exchange folder. If using the EXE, pass `--chatgpt`.
+4. In AROS, enable DHCP on the RTL8139 adapter and run `ChatGPT` from AROShell. Use `/reset` to clear the conversation and `/quit` to exit.
+
+The API key stays in Windows. Any program inside this VM can contact the local chat bridge while chat mode is active, so use it with a guest image you trust. The QEMU link permits this specific service without enabling general guest internet access. The app supports Latin-1 text in the console. If the guest loses its connection, restart the VM.
+
 ## Build the included EXE launcher source
 
 From PowerShell in this directory, run:
 
     & "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe" /nologo /target:exe /platform:x64 /out:AROS-Setup-x64.exe /resource:AROS.ps1,AROS.ps1 ArosSetup.cs
 
-The resulting EXE accepts --update, --offline-iso, --share, --share-write, and --windows-desktop. Double-click it for a normal boot.
+The resulting EXE accepts --update, --offline-iso, --share, --share-write, --windows-desktop, and --chatgpt. Double-click it for a normal boot.
 
 The Windows launcher is MIT-licensed. AROS and QEMU retain their own licenses.
