@@ -58,8 +58,8 @@ jobs:
           makefile = Path("aros-src/Makefile.in")
           source = makefile.read_bytes()
           old = b"$(GENDIR)/tools/MetaMake/configure --prefix=$(TOOLDIR)"
-          new = ('sh "$(cygpath -u "$(GENDIR)/tools/MetaMake/configure")" '
-                 '--srcdir="$(cygpath -u "$(GENDIR)/tools/MetaMake")" '
+          new = ('sh ../../bin/pc-x86_64/gen/tools/MetaMake/configure '
+                 '--srcdir=../../bin/pc-x86_64/gen/tools/MetaMake '
                  '--build=x86_64-w64-mingw32 --host=x86_64-w64-mingw32 '
                  '--prefix=$(TOOLDIR)')
           if source.count(old) != 1:
