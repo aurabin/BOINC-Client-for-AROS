@@ -43,6 +43,12 @@ jobs:
           grep -F -- '$(HOST_LDFLAGS) $^ -o $@' "$recipe"
           sed -i 's/$(HOST_LDFLAGS) \$\^ -o \$@/& -liconv/' "$recipe"
           grep -F -- '$^ -o $@ -liconv' "$recipe"
+          # MinGW mkdir takes a path only. Apply this change to the Windows checkout.
+          parser=aros-src/tools/parseoffsets/parsendkoffsets.c
+          old='mkdir (path, S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);'
+          grep -F -- "$old" "$parser"
+          sed -i "s/$old/mkdir (path);/" "$parser"
+          grep -F -- 'mkdir (path);' "$parser"
           mkdir aros-build
           cd aros-build
           logdir="$(cygpath -u "$GITHUB_WORKSPACE")/logs"
