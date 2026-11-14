@@ -1,4 +1,6 @@
-# AROS for Windows x64
+# AROS Wizard powered by ChatGPT
+
+Windows x64 launcher for AROS ABIv11 in QEMU.
 
 ## Start and update
 

@@ -3,6 +3,9 @@ using System.Diagnostics;
 using System.IO;
 using System.Reflection;
 
+[assembly: AssemblyTitle("AROS Wizard powered by ChatGPT")]
+[assembly: AssemblyProduct("AROS Wizard powered by ChatGPT")]
+
 internal static class ArosSetup
 {
     private static int Main(string[] args)
@@ -12,7 +15,7 @@ internal static class ArosSetup
             using (Stream script = Assembly.GetExecutingAssembly().GetManifestResourceStream("AROS.ps1"))
             {
                 if (script == null || script.Length == 0 || !Environment.Is64BitProcess) return 1;
-                Console.WriteLine("AROS Setup x64: embedded PowerShell script verified.");
+                Console.WriteLine("AROS Wizard powered by ChatGPT: embedded PowerShell script verified.");
                 return 0;
             }
         }
@@ -58,7 +61,7 @@ internal static class ArosSetup
             {
                 process.WaitForExit();
                 if (process.ExitCode == 0) return 0;
-                Console.Error.WriteLine("AROS Setup endete mit Fehlercode " + process.ExitCode + ".");
+                Console.Error.WriteLine("AROS Wizard powered by ChatGPT endete mit Fehlercode " + process.ExitCode + ".");
             }
         }
         catch (Exception error)

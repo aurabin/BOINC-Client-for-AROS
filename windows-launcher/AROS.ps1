@@ -53,7 +53,7 @@ function Select-OfflineIso {
     Add-Type -AssemblyName System.Windows.Forms
     $dialog = New-Object Windows.Forms.OpenFileDialog
     try {
-        $dialog.Title = 'Lokales AROS-Startabbild auswaehlen'
+        $dialog.Title = 'AROS Wizard powered by ChatGPT - Offline-ISO auswaehlen'
         $dialog.Filter = 'ISO-Dateien (*.iso)|*.iso'
         $dialog.CheckFileExists = $true
         if ($dialog.ShowDialog() -eq [Windows.Forms.DialogResult]::OK) { $dialog.FileName }
