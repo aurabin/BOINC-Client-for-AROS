@@ -57,7 +57,15 @@ jobs:
           "$PWD/bin/linux-x86_64/tools/crosstools/x86_64-aros-gcc" --sysroot="$sdk" \
             $(pkg-config --cflags openssl) openssl-probe.c -o openssl-probe \
             $(pkg-config --static --libs openssl) -lmiami -lnet 2>&1 | tee ../logs/openssl-link.log
-          make -j"$(nproc)" contrib-curl 2>&1 | tee ../logs/aros-curl.log
+          curl_recipe=../AROS/contrib/development/libs/curl/mmakefile.src
+          grep -Fq 'LIBS="-lmiami -lnet' "$curl_recipe"
+          sed -i 's/LIBS="-lmiami -lnet/LIBS="-lssl -lcrypto -lmiami -lnet/' "$curl_recipe"
+          if ! make -j"$(nproc)" contrib-curl 2>&1 | tee ../logs/aros-curl.log; then
+            find bin/pc-x86_64/gen/contrib/development/libs/curl -name config.log -type f \
+              -exec grep -H -E 'HMAC_(Update|Init_ex)|undefined reference|cannot find|file format not recognized' {} + \
+              | tail -80 || true
+            exit 1
+          fi
       - name: Cross-compile BOINC client
         shell: bash
         run: |
