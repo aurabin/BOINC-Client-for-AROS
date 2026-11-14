@@ -31,7 +31,7 @@ internal static class ArosSetup
                 case "--offline-iso": options += " -OfflineIso"; break;
                 case "--chatgpt": options += " -ChatGPT"; break;
                 case "--virtual-drives": options += " -VirtualDrives"; break;
-                case "--smp": options += " -SmpCpus 4"; break;
+                case "--smp": options += " -Smp"; break;
                 case "--wanderer-fullscreen": options += " -WandererFullscreen"; break;
                 case "--windows-desktop": options += " -WindowsDesktop"; break;
                 case "--share": options += " -ShareWindowsFiles"; shareWindowsFiles = true; break;

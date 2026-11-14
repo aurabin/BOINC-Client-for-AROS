@@ -24,9 +24,13 @@ Use `AROS-Laufwerke.cmd -OfflineIso` to select a local boot ISO. With an existin
 
 ## Experimental SMP guest
 
-Open **AROS-SMP.cmd** or run the EXE with `--smp` and select an x86-64 PC SMP boot ISO from the AROS Development Team. The Wizard exposes four virtual CPUs. For a different count, run `AROS-starten.cmd -SmpCpus 2 -IsoPath "D:\Images\AROS-SMP.iso"`. If no path is supplied, the launcher opens the ISO picker.
+Open **AROS-SMP.cmd** or run the EXE with `--smp`. Choose a virtual CPU count from 1 to 255, then select an x86-64 PC SMP boot ISO from the AROS Development Team. The count defaults to the number of logical processors available to the Wizard.
 
-The option supplies virtual CPUs to QEMU. The guest kernel in the chosen ISO must support SMP. The stable cached ABIv11 image is used by the normal one-CPU launch. Use separate images for experimental guest installs.
+- For a fixed number, run `AROS-SMP.cmd -SmpCpus 3 -IsoPath "D:\Images\AROS-SMP.iso"`.
+- To model two sockets, three cores per socket and two threads per core, run `AROS-SMP.cmd -SmpSockets 2 -SmpCores 3 -SmpThreads 2`. The Wizard derives the 12 virtual CPUs.
+- To test a different emulated x86 CPU, add `-SmpCpuModel` with a model from `qemu-system-x86_64.exe -cpu help`. Model availability depends on the installed QEMU build.
+
+The guest kernel in the chosen ISO determines how many of the supplied CPUs it can bring online. The stable cached ABIv11 image is used by the normal one-CPU launch. Use separate images for experimental guest installs.
 
 ## Windows file exchange
 

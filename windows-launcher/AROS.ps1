@@ -10,7 +10,12 @@ param(
     [switch]$ChatGPT,
     [switch]$WandererFullscreen,
     [switch]$VirtualDrives,
-    [ValidateRange(1, 255)][int]$SmpCpus = 1
+    [switch]$Smp,
+    [ValidateRange(1, 255)][int]$SmpCpus = 1,
+    [ValidateRange(1, 255)][int]$SmpSockets = 1,
+    [ValidateRange(1, 255)][int]$SmpCores = 1,
+    [ValidateRange(1, 255)][int]$SmpThreads = 1,
+    [ValidatePattern('^[A-Za-z0-9_.-]+$')][string]$SmpCpuModel
 )
 
 $ErrorActionPreference = 'Stop'
@@ -224,6 +229,44 @@ function Select-OfflineIso {
     }
 }
 
+function Select-SmpCpuCount {
+    Add-Type -AssemblyName System.Windows.Forms
+    Add-Type -AssemblyName System.Drawing
+    $form = New-Object Windows.Forms.Form
+    try {
+        $form.Text = 'AROS Wizard - SMP'
+        $form.ClientSize = [Drawing.Size]::new(377, 126)
+        $form.StartPosition = 'CenterScreen'
+        $form.FormBorderStyle = 'FixedDialog'
+        $form.MaximizeBox = $false
+        $form.MinimizeBox = $false
+        $form.AutoScaleMode = 'Font'
+        $label = New-Object Windows.Forms.Label
+        $label.Text = 'Virtuelle CPUs fuer die AROS-SMP-ISO'
+        $label.AutoSize = $true
+        $label.Location = [Drawing.Point]::new(16, 17)
+        $count = New-Object Windows.Forms.NumericUpDown
+        $count.Location = [Drawing.Point]::new(16, 44)
+        $count.Minimum = 1
+        $count.Maximum = 255
+        $count.Value = [Math]::Min(255, [Environment]::ProcessorCount)
+        $ok = New-Object Windows.Forms.Button
+        $ok.Text = 'Weiter'
+        $ok.Location = [Drawing.Point]::new(200, 88)
+        $ok.DialogResult = 'OK'
+        $cancel = New-Object Windows.Forms.Button
+        $cancel.Text = 'Abbrechen'
+        $cancel.Location = [Drawing.Point]::new(286, 88)
+        $cancel.DialogResult = 'Cancel'
+        $form.Controls.AddRange(@($label, $count, $ok, $cancel))
+        $form.AcceptButton = $ok
+        $form.CancelButton = $cancel
+        if ($form.ShowDialog() -eq [Windows.Forms.DialogResult]::OK) { [int]$count.Value }
+    } finally {
+        $form.Dispose()
+    }
+}
+
 function Save-ArosImage([string]$Release, [string]$Destination) {
     $stage = Join-Path $data ([guid]::NewGuid().ToString('N'))
     New-Item -ItemType Directory -Path $stage | Out-Null
@@ -412,10 +455,28 @@ if ($WritableShare -and !$ShareWindowsFiles) {
 }
 
 $iso = $null
-$useOfflineIso = $OfflineIso -or $PSBoundParameters.ContainsKey('IsoPath') -or $SmpCpus -gt 1
-if ($SmpCpus -gt 1 -and $SetupOnly) {
-    throw '-SmpCpus benoetigt einen normalen VM-Start.'
+$hasSmpTopology = $PSBoundParameters.ContainsKey('SmpSockets') -or
+    $PSBoundParameters.ContainsKey('SmpCores') -or $PSBoundParameters.ContainsKey('SmpThreads')
+$useSmp = $Smp -or $PSBoundParameters.ContainsKey('SmpCpus') -or $hasSmpTopology -or $SmpCpuModel
+if ($useSmp -and ($SetupOnly -or $Update)) {
+    throw 'SMP benoetigt einen normalen VM-Start.'
 }
+$smpArgument = $null
+if ($hasSmpTopology) {
+    $topologyCount = $SmpSockets * $SmpCores * $SmpThreads
+    if ($topologyCount -gt 255) { throw 'Die CPU-Topologie darf hoechstens 255 virtuelle CPUs ergeben.' }
+    if ($PSBoundParameters.ContainsKey('SmpCpus') -and $SmpCpus -ne $topologyCount) {
+        throw '-SmpCpus muss Sockel mal Kerne mal Threads entsprechen.'
+    }
+    $smpArgument = "cpus=$topologyCount,sockets=$SmpSockets,cores=$SmpCores,threads=$SmpThreads"
+} elseif ($useSmp) {
+    if (!$PSBoundParameters.ContainsKey('SmpCpus')) {
+        $SmpCpus = Select-SmpCpuCount
+        if (!$SmpCpus) { return }
+    }
+    $smpArgument = [string]$SmpCpus
+}
+$useOfflineIso = $OfflineIso -or $PSBoundParameters.ContainsKey('IsoPath') -or $useSmp
 if ($useOfflineIso -and $Update) {
     throw 'Eine lokale ISO kann nicht gleichzeitig mit -Update gestartet werden.'
 }
@@ -576,7 +637,8 @@ try {
         $network = 'user,model=rtl8139,restrict=on,' + ($forwarding -join ',')
     }
     $qemuArgs = @('-m', '1024', '-boot', $bootOrder, '-nic', $network) + $virtualDriveArgs
-    if ($SmpCpus -gt 1) { $qemuArgs += @('-smp', [string]$SmpCpus) }
+    if ($smpArgument) { $qemuArgs += @('-smp', $smpArgument) }
+    if ($SmpCpuModel) { $qemuArgs += @('-cpu', $SmpCpuModel) }
     if ($iso) { $qemuArgs += @('-cdrom', $iso) }
     if ($WandererFullscreen) {
         $sessionId = [guid]::NewGuid().ToString('N')
