@@ -1,0 +1,81 @@
+using System;
+using System.Diagnostics;
+using System.IO;
+using System.Reflection;
+
+internal static class ArosSetup
+{
+    private static int Main(string[] args)
+    {
+        if (args.Length == 1 && args[0] == "--self-test")
+        {
+            using (Stream script = Assembly.GetExecutingAssembly().GetManifestResourceStream("AROS.ps1"))
+            {
+                if (script == null || script.Length == 0 || !Environment.Is64BitProcess) return 1;
+                Console.WriteLine("AROS Setup x64: embedded PowerShell script verified.");
+                return 0;
+            }
+        }
+
+        string options = "";
+        bool shareWindowsFiles = false;
+        bool writableShare = false;
+        foreach (string arg in args)
+        {
+            switch (arg)
+            {
+                case "--update": options += " -Update"; break;
+                case "--share": options += " -ShareWindowsFiles"; shareWindowsFiles = true; break;
+                case "--share-write": writableShare = true; break;
+                default:
+                    Console.Error.WriteLine("Usage: AROS-Setup-x64.exe [--update | --share | --share-write]");
+                    return 2;
+            }
+        }
+        if (writableShare)
+        {
+            if (!shareWindowsFiles) options += " -ShareWindowsFiles";
+            options += " -WritableShare";
+        }
+
+        string temporaryScript = Path.Combine(Path.GetTempPath(), "aros-" + Guid.NewGuid().ToString("N") + ".ps1");
+        try
+        {
+            using (Stream script = Assembly.GetExecutingAssembly().GetManifestResourceStream("AROS.ps1"))
+            using (FileStream output = new FileStream(temporaryScript, FileMode.CreateNew))
+            {
+                script.CopyTo(output);
+            }
+
+            ProcessStartInfo start = new ProcessStartInfo(
+                Path.Combine(Environment.SystemDirectory, @"WindowsPowerShell\v1.0\powershell.exe"),
+                "-NoProfile -ExecutionPolicy Bypass -File \"" + temporaryScript + "\"" + options);
+            start.UseShellExecute = false;
+            start.EnvironmentVariables["AROS_SETUP_DIRECTORY"] = AppDomain.CurrentDomain.BaseDirectory;
+            using (Process process = Process.Start(start))
+            {
+                process.WaitForExit();
+                if (process.ExitCode == 0) return 0;
+                Console.Error.WriteLine("AROS Setup endete mit Fehlercode " + process.ExitCode + ".");
+            }
+        }
+        catch (Exception error)
+        {
+            Console.Error.WriteLine(error.Message);
+        }
+        finally
+        {
+            try { File.Delete(temporaryScript); }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
+        }
+
+        if (!Console.IsInputRedirected)
+        {
+            Console.WriteLine("Zum Schliessen Enter druecken.");
+            Console.ReadLine();
+        }
+        return 1;
+    }
+}
+
