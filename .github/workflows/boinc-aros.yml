@@ -53,9 +53,11 @@ jobs:
           export PKG_CONFIG_SYSROOT_DIR="$(dirname "$sdk")"
           export PKG_CONFIG_PATH=
           pkg-config --static --cflags --libs openssl | tee ../logs/openssl-pkg-config.log
-          printf '#include <openssl/ssl.h>\nint main(void) { return OPENSSL_init_ssl(0, 0) != 1; }\n' > openssl-probe.c
+          probe_dir="$(mktemp -d)"
+          trap 'rm -f -- "$probe_dir/openssl-probe.c" "$probe_dir/openssl-probe"; rmdir -- "$probe_dir"' EXIT
+          printf '#include <openssl/ssl.h>\nint main(void) { return OPENSSL_init_ssl(0, 0) != 1; }\n' > "$probe_dir/openssl-probe.c"
           "$PWD/bin/linux-x86_64/tools/crosstools/x86_64-aros-gcc" --sysroot="$sdk" \
-            $(pkg-config --cflags openssl) openssl-probe.c -o openssl-probe \
+            $(pkg-config --cflags openssl) "$probe_dir/openssl-probe.c" -o "$probe_dir/openssl-probe" \
             $(pkg-config --static --libs openssl) -lmiami -lnet 2>&1 | tee ../logs/openssl-link.log
           curl_recipe=../AROS/contrib/development/libs/curl/mmakefile.src
           grep -Fq 'LIBS="-lmiami -lnet' "$curl_recipe"
