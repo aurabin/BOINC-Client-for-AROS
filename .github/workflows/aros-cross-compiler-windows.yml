@@ -33,22 +33,22 @@ jobs:
           export PATH="/tmp/aros-netpbm/bin:$PATH"
           mkdir -p logs
           cd /tmp
-          git config --global core.autocrlf false
           git init aros-src
+          git -C aros-src config core.autocrlf false
           git -C aros-src remote add origin https://github.com/aros-development-team/AROS.git
           git -C aros-src fetch --depth=1 origin ddc6446f762e36a9070f300a457d03e6f137f7d3
           git -C aros-src checkout --detach FETCH_HEAD
           # FlexCat uses MinGW's external iconv. Keep the library after its objects.
           recipe=aros-src/tools/flexcat/src/Makefile.aros
-          grep -F -- '$(HOST_LDFLAGS) $^ -o $@' "$recipe"
+          grep -Fq -- '$(HOST_LDFLAGS) $^ -o $@' "$recipe"
           sed -i 's/$(HOST_LDFLAGS) \$\^ -o \$@/& -liconv/' "$recipe"
-          grep -F -- '$^ -o $@ -liconv' "$recipe"
+          grep -Fq -- '$^ -o $@ -liconv' "$recipe"
           # MinGW mkdir takes a path only. Apply this change to the Windows checkout.
           parser=aros-src/tools/parseoffsets/parsendkoffsets.c
           old='mkdir (path, S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);'
-          grep -F -- "$old" "$parser"
+          grep -Fq -- "$old" "$parser"
           sed -i "s/$old/mkdir (path);/" "$parser"
-          grep -F -- 'mkdir (path);' "$parser"
+          grep -Fq -- 'mkdir (path);' "$parser"
           # Autoconf must resolve MetaMake's auxiliary files in MSYS path syntax.
           for auxiliary in install-sh config.guess config.sub; do
             test -s "aros-src/tools/MetaMake/$auxiliary"
