@@ -4,6 +4,8 @@ Windows x64 launcher for AROS ABIv11 in QEMU.
 
 ## Start and update
 
+On the first normal managed ISO boot, the Wizard asks whether automatic ISO updates are wanted. Yes and No are saved per Wizard installation. Cancel leaves the choice as it was. Run **AROS-Update-Einstellungen.cmd** to change the setting without booting.
+
 - **AROS-starten.cmd** boots the locally cached AROS ABIv11 ISO in QEMU. A fresh setup discovers and downloads the latest matching boot ISO from AxRuntime. QEMU is installed via WinGet when needed.
 - **AROS-aktualisieren.cmd** checks AxRuntime for a newer x86-64 ABIv11 boot ISO and downloads it without starting the VM. The previous ISO stays in AROS-Daten. A failed download leaves the previous ISO available for the next normal start.
 - **AROS-AutoUpdate.cmd** or the EXE flag `--auto-update` checks the official release index before each ISO boot. It starts the previous cached ISO if the update fails. This updates the boot image cache only. Explicit local ISOs and installed DH0 systems use their selected boot media.

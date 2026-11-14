@@ -2,6 +2,7 @@ param(
     [switch]$SetupOnly,
     [switch]$Update,
     [switch]$AutoUpdate,
+    [switch]$UpdateSettings,
     [switch]$CleanupOnly,
     [switch]$ShareWindowsFiles,
     [switch]$WritableShare,
@@ -74,6 +75,27 @@ function Assert-IsoImage([string]$Path) {
     } finally {
         $image.Dispose()
     }
+}
+
+function Get-AutoUpdatePreference([string]$Path, [switch]$AskAgain) {
+    $saved = if (Test-Path -LiteralPath $Path -PathType Leaf) {
+        ([string](Get-Content -LiteralPath $Path -Raw)).Trim()
+    }
+    if (!$AskAgain -and $saved -in 'enabled', 'disabled') { return $saved -eq 'enabled' }
+    if (![Environment]::UserInteractive) { return $saved -eq 'enabled' }
+
+    Add-Type -AssemblyName System.Windows.Forms
+    $choice = [Windows.Forms.MessageBox]::Show(
+        "Automatische AROS-Systemupdates fuer das Startabbild einschalten?`n`nBeim Start sucht der Wizard nach einer neuen offiziellen ABIv11-Boot-ISO. Installierte DH0-Systeme werden dabei nicht aktualisiert.",
+        'AROS Wizard - Automatische Updates',
+        [Windows.Forms.MessageBoxButtons]::YesNoCancel,
+        [Windows.Forms.MessageBoxIcon]::Question,
+        [Windows.Forms.MessageBoxDefaultButton]::Button2)
+    if ($choice -eq [Windows.Forms.DialogResult]::Cancel) { return $saved -eq 'enabled' }
+    $enabled = $choice -eq [Windows.Forms.DialogResult]::Yes
+    $value = if ($enabled) { 'enabled' } else { 'disabled' }
+    [IO.File]::WriteAllText($Path, $value)
+    return $enabled
 }
 
 function Get-DriveSizeMiB([string]$ImageTool, [string]$Path) {
@@ -569,11 +591,16 @@ try {
 
 try {
     $removed = Clear-LauncherTemporaryFiles $data
+    $updatePreference = Join-Path $data 'auto-update.txt'
     if ($CleanupOnly) {
         Write-Host "Bereinigung abgeschlossen: $removed temporaere Eintraege entfernt."
         return
     }
     $qemu = $null
+    if ($UpdateSettings) {
+        $null = Get-AutoUpdatePreference $updatePreference -AskAgain
+        return
+    }
     $configuration = $null
     $bootOrder = 'd'
     $virtualDriveArgs = @()
@@ -608,6 +635,9 @@ try {
     }
 
     if (!$useOfflineIso -and $bootOrder -eq 'd') {
+        if (!$Update -and !$SetupOnly -and !$PSBoundParameters.ContainsKey('AutoUpdate')) {
+            $AutoUpdate = Get-AutoUpdatePreference $updatePreference
+        }
         $cached = @(
             Get-ChildItem -LiteralPath $data -File -Filter 'AROS-*.iso' |
                 ForEach-Object {
