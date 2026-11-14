@@ -91,6 +91,17 @@ jobs:
                   raise SystemExit("Unexpected MetaMake environment-variable code")
               source = source.replace(old, new)
           mmake.write_bytes(source)
+
+          collector = Path("aros-src/tools/collect-aros/mmakefile")
+          source = collector.read_bytes()
+          for command in (
+              b"$(CROSSTOOLSDIR)/$(AROS_TARGET_CPU)-aros/bin/collect-aros",
+              b"$(CROSSTOOLSDIR)/$(AROS_TARGET_CPU)-aros-collect-aros",
+          ):
+              if command not in source:
+                  raise SystemExit("Unexpected collect-aros install recipe")
+              source = source.replace(command, command + b".exe")
+          collector.write_bytes(source)
           PY
           mkdir aros-build
           cd aros-build
