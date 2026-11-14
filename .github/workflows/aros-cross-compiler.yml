@@ -1,0 +1,57 @@
+name: Original AROS cross-compiler
+on:
+  push:
+    branches: [build/original-aros-cross-compiler]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    env:
+      AROS_REVISION: ddc6446f762e36a9070f300a457d03e6f137f7d3
+    steps:
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential gcc-multilib g++-multilib gawk bison flex             autoconf automake gettext texinfo patch curl wget git zip unzip xz-utils             libtool libtool-bin pkg-config python3-mako cmake ninja-build meson             netpbm nasm yasm byacc libpng-dev libelf-dev liblzma-dev             libncurses-dev liblzo2-dev libzstd-dev zlib1g-dev libexpat1-dev
+      - name: Fetch original AROS sources
+        run: |
+          git init AROS
+          git -C AROS remote add origin https://github.com/aros-development-team/AROS.git
+          git -C AROS fetch --depth=1 origin "$AROS_REVISION"
+          git -C AROS checkout --detach FETCH_HEAD
+      - name: Build upstream GNU cross-tools
+        run: |
+          mkdir -p build logs
+          cd build
+          ../AROS/configure --target=pc-x86_64 --with-toolchain=gnu 2>&1 | tee ../logs/configure.log
+          make -j"$(nproc)" crosstools-toolchain 2>&1 | tee ../logs/build.log
+        shell: bash
+      - name: Verify and package cross-tools
+        run: |
+          compiler=$(find build/bin -type f -name x86_64-aros-gcc -print -quit)
+          test -n "$compiler"
+          "$compiler" --version
+          test "$("$compiler" -dumpmachine)" = x86_64-aros
+          printf 'int aros_smoke(void) { return 0; }\n' > smoke.c
+          "$compiler" -ffreestanding -c smoke.c -o smoke.o
+          readelf -h smoke.o
+          tar -czf aros-cross-compiler-linux-x86_64.tar.gz -C "$(dirname "$compiler")" .
+          sha256sum aros-cross-compiler-linux-x86_64.tar.gz > aros-cross-compiler-linux-x86_64.tar.gz.sha256
+        shell: bash
+      - uses: actions/upload-artifact@v4
+        with:
+          name: aros-cross-compiler-linux-x86_64
+          path: |
+            aros-cross-compiler-linux-x86_64.tar.gz
+            aros-cross-compiler-linux-x86_64.tar.gz.sha256
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: aros-build-logs
+          path: |
+            logs/
+            build/config.log
