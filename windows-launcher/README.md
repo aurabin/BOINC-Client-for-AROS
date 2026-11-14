@@ -14,7 +14,17 @@ The file exchange is read-only by default. For a writable folder, run:
 
     AROS-starten.cmd -ShareWindowsFiles -WritableShare
 
-QEMU's writable virtual FAT support is experimental. Use copies of your files, use ASCII filenames, close QEMU before editing the folder in Windows, and use the folder only for files you want AROS to see. QEMU guest networking is disabled.
+QEMU's writable virtual FAT support is experimental. Use copies of your files, use ASCII filenames, close QEMU before editing the folder in Windows, and use the folder only for files you want AROS to see.
+
+## Control the Windows desktop from AROS
+
+1. Start a Windows VNC server configured for interactive desktop control and password authentication. Bind it exclusively to IPv4 loopback, `127.0.0.1:5900`. Use a server that shares your current Windows desktop.
+2. Double-click **AROS-Windows-Desktop.cmd**. For a different Windows server port, run `AROS-Windows-Desktop.cmd -DesktopPort 5901`. The guest endpoint stays the same.
+3. In AROS, enable networking with DHCP on the virtual RTL8139 adapter. In a VNC viewer built for x86-64 ABIv11, connect to IP address `10.0.2.100` and TCP port `5900` and authenticate with the VNC server password.
+
+The desktop gives you mouse and keyboard control. Open Explorer for files, launch apps from Start, and use PowerShell for commands under your Windows account. Windows applies its normal permissions. UAC secure-desktop support depends on the Windows VNC server.
+
+This mode adds one QEMU guest-to-host forwarding rule. General network access stays disabled in this mode. Without the desktop option, QEMU has no network adapter. The launcher does not install a server or a viewer. Restart the VM if the VNC connection drops and the viewer cannot reconnect.
 
 ## Build the included EXE launcher source
 
@@ -22,6 +32,6 @@ From PowerShell in this directory, run:
 
     & "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe" /nologo /target:exe /platform:x64 /out:AROS-Setup-x64.exe /resource:AROS.ps1,AROS.ps1 ArosSetup.cs
 
-The resulting EXE accepts --update, --share, or --share-write. Double-click it for a normal boot.
+The resulting EXE accepts --update, --share, --share-write, and --windows-desktop. Double-click it for a normal boot.
 
 The Windows launcher is MIT-licensed. AROS and QEMU retain their own licenses.

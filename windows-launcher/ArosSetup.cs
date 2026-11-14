@@ -25,10 +25,11 @@ internal static class ArosSetup
             switch (arg)
             {
                 case "--update": options += " -Update"; break;
+                case "--windows-desktop": options += " -WindowsDesktop"; break;
                 case "--share": options += " -ShareWindowsFiles"; shareWindowsFiles = true; break;
                 case "--share-write": writableShare = true; break;
                 default:
-                    Console.Error.WriteLine("Usage: AROS-Setup-x64.exe [--update | --share | --share-write]");
+                    Console.Error.WriteLine("Usage: AROS-Setup-x64.exe [--update | --share | --share-write | --windows-desktop]");
                     return 2;
             }
         }

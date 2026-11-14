@@ -2,7 +2,9 @@ param(
     [switch]$SetupOnly,
     [switch]$Update,
     [switch]$ShareWindowsFiles,
-    [switch]$WritableShare
+    [switch]$WritableShare,
+    [switch]$WindowsDesktop,
+    [ValidateRange(1, 65535)][int]$DesktopPort = 5900
 )
 
 $ErrorActionPreference = 'Stop'
@@ -83,6 +85,27 @@ if ($WritableShare -and !$ShareWindowsFiles) {
     throw '-WritableShare benoetigt -ShareWindowsFiles.'
 }
 
+if ($WindowsDesktop -and ($Update -or $SetupOnly)) {
+    throw '-WindowsDesktop benoetigt einen normalen VM-Start.'
+}
+
+if ($WindowsDesktop) {
+    try {
+        $listeners = @([Net.NetworkInformation.IPGlobalProperties]::GetIPGlobalProperties().
+            GetActiveTcpListeners() | Where-Object { $_.Port -eq $DesktopPort })
+    } catch [Management.Automation.MethodInvocationException] {
+        $listeners = $null
+        Write-Warning "VNC-Listener nicht pruefbar. Der Server muss nur auf 127.0.0.1:$DesktopPort lauschen."
+    }
+    if ($null -ne $listeners) {
+        $loopback = @($listeners | Where-Object { $_.Address.Equals([Net.IPAddress]::Loopback) })
+        $external = @($listeners | Where-Object { ![Net.IPAddress]::IsLoopback($_.Address) })
+        if (!$loopback.Count -or $external.Count) {
+            throw "Starte den Windows-VNC-Server nur auf 127.0.0.1:$DesktopPort."
+        }
+    }
+}
+
 New-Item -ItemType Directory -Path $data -Force | Out-Null
 $lockPath = Join-Path $data 'launcher.lock'
 try {
@@ -146,7 +169,12 @@ try {
     }
     if ($SetupOnly) { return }
 
-    $qemuArgs = @('-m', '1024', '-boot', 'd', '-cdrom', $iso, '-nic', 'none')
+    $network = 'none'
+    if ($WindowsDesktop) {
+        $network = "user,model=rtl8139,restrict=on,guestfwd=tcp:10.0.2.100:5900-tcp:127.0.0.1:$DesktopPort"
+        Write-Host 'Windows-Desktop: VNC-Client in AROS mit 10.0.2.100:5900 verbinden.'
+    }
+    $qemuArgs = @('-m', '1024', '-boot', 'd', '-cdrom', $iso, '-nic', $network)
     if ($ShareWindowsFiles) {
         $share = Join-Path $root 'AROS-Austausch'
         New-Item -ItemType Directory -Force -Path $share | Out-Null
