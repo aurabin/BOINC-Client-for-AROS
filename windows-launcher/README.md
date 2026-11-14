@@ -5,6 +5,7 @@ Windows x64 launcher for AROS ABIv11 in QEMU.
 ## Start and update
 
 - **AROS-starten.cmd** boots the locally cached AROS ABIv11 ISO in QEMU. A fresh setup discovers and downloads the latest matching boot ISO from AxRuntime. QEMU is installed via WinGet when needed.
+- **AROS-Vollbild.cmd** starts the Wizard in fullscreen. Use `AROS-Offline-ISO.cmd -Fullscreen` to select a local ISO and boot it in fullscreen.
 - **AROS-aktualisieren.cmd** checks AxRuntime for a newer x86-64 ABIv11 boot ISO and downloads it without starting the VM. The previous ISO stays in AROS-Daten. A failed download leaves the previous ISO available for the next normal start.
 - Keep the launcher beside the original AROS-Daten folder to reuse an existing installation. Exit QEMU before updating. The updater checks boot images, not Windows launcher versions or in-guest packages.
 
@@ -51,6 +52,6 @@ From PowerShell in this directory, run:
 
     & "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe" /nologo /target:exe /platform:x64 /out:AROS-Setup-x64.exe /resource:AROS.ps1,AROS.ps1 ArosSetup.cs
 
-The resulting EXE accepts --update, --offline-iso, --share, --share-write, --windows-desktop, and --chatgpt. Double-click it for a normal boot.
+The resulting EXE accepts --update, --offline-iso, --share, --share-write, --windows-desktop, --chatgpt, and --fullscreen. Double-click it for a normal boot.
 
 The Windows launcher is MIT-licensed. AROS and QEMU retain their own licenses.

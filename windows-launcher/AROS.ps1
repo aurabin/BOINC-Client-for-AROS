@@ -7,7 +7,8 @@ param(
     [ValidateRange(1, 65535)][int]$DesktopPort = 5900,
     [switch]$OfflineIso,
     [string]$IsoPath,
-    [switch]$ChatGPT
+    [switch]$ChatGPT,
+    [switch]$Fullscreen
 )
 
 $ErrorActionPreference = 'Stop'
@@ -313,6 +314,7 @@ try {
         $network = 'user,model=rtl8139,restrict=on,' + ($forwarding -join ',')
     }
     $qemuArgs = @('-m', '1024', '-boot', 'd', '-cdrom', $iso, '-nic', $network)
+    if ($Fullscreen) { $qemuArgs += '-full-screen' }
     if ($ShareWindowsFiles) {
         $share = Join-Path $root 'AROS-Austausch'
         New-Item -ItemType Directory -Force -Path $share | Out-Null
