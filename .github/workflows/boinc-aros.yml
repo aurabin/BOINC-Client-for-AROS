@@ -28,6 +28,10 @@ jobs:
           }
           checkout_source AROS aros-development-team/AROS ddc6446f762e36a9070f300a457d03e6f137f7d3
           checkout_source AROS/contrib aros-development-team/contrib a164e1ce270da2e4fda9480d61f7e73f7a11efb6
+          # Keep OpenSSL's static archives and pkg-config files in the AROS SDK lib directory.
+          recipe=AROS/contrib/development/libs/openssl/mmakefile.src
+          grep -F -- '--prefix=/$(AROS_DIR_DEVELOPER)' "$recipe"
+          sed -i 's|--prefix=/$(AROS_DIR_DEVELOPER)|--libdir=lib --prefix=/$(AROS_DIR_DEVELOPER)|' "$recipe"
           checkout_source BOINC boinc/boinc 4c1073b1781a65dad109ad024eb07bab21e1ba21
       - name: Build AROS SDK and target libcurl
         shell: bash
@@ -36,6 +40,12 @@ jobs:
           cd build
           ../AROS/configure --target=pc-x86_64 --with-toolchain=gnu 2>&1 | tee ../logs/aros-configure.log
           make -j"$(nproc)" sdk 2>&1 | tee ../logs/aros-sdk.log
+          make -j"$(nproc)" contrib-openssl 2>&1 | tee ../logs/aros-openssl.log
+          sdk="$PWD/bin/pc-x86_64/AROS/Developer"
+          test -s "$sdk/lib/libcrypto.a"
+          test -s "$sdk/lib/libssl.a"
+          export PKG_CONFIG_LIBDIR="$sdk/lib/pkgconfig"
+          export PKG_CONFIG_PATH=
           make -j"$(nproc)" contrib-curl 2>&1 | tee ../logs/aros-curl.log
       - name: Cross-compile BOINC client
         shell: bash
@@ -78,3 +88,4 @@ jobs:
             logs/
             build/config.log
             BOINC/config.log
+            build/bin/pc-x86_64/gen/contrib/development/libs/curl/**/config.log
