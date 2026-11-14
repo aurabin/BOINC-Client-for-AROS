@@ -20,7 +20,13 @@ On the first normal managed ISO boot, the Wizard asks whether automatic ISO upda
 
 ## Start from an offline ISO
 
-Double-click **AROS-Offline-ISO.cmd** and select a local bootable AROS x86-64 ISO. Extract the ISO first if it came in a ZIP. The launcher checks the ISO-9660 header and boots the selected file directly. It skips downloads and leaves the installed AROS image cache untouched. QEMU must already be installed. Cancel closes the picker without starting anything.
+**AROS-Distributionen.cmd** or the EXE option `--distributions` offers AROS One 32 Bit, AROS One 64 Bit, Icaros Desktop and AspireOS. Select the distribution, then select its extracted bootable ISO. The legacy 32-bit profiles use QEMU's `qemu32` CPU model. Each profile keeps separate default disk images and disk settings when used with `-VirtualDrives`. Distribution images are not updated from the Wizard's ABIv11 release feed.
+
+To launch a known image directly, use `AROS-starten.cmd -Distribution Icaros -IsoPath "D:\Images\icaros.iso"`. Other profile IDs are `AROSOne32`, `AROSOne64` and `AspireOS`.
+
+Double-click **AROS-Offline-ISO.cmd** and select a local bootable AROS x86 or x86-64 ISO. Extract the ISO first if it came in a ZIP. The launcher checks the ISO-9660 header and boots the selected file directly. It skips downloads and leaves the installed AROS image cache untouched. QEMU must already be installed. Cancel closes the picker without starting anything.
+
+For local ISO boot without an explicit profile or SMP, the Wizard reads the ISO-9660 volume label and filename. It chooses a matching distribution profile or a generic 32-bit CPU when those identifiers provide a clear match. Unrecognized or conflicting identifiers retain the default CPU; choose a distribution explicitly to override detection. The identifiers are hints and do not prove that an image boots.
 
 To pass a path directly, run `AROS-starten.cmd -IsoPath "D:\Images\AROS.iso"`. To select an ISO and use Windows desktop mode in the same session, run `AROS-Offline-ISO.cmd -WindowsDesktop`.
 

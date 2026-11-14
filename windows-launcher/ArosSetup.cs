@@ -31,6 +31,7 @@ internal static class ArosSetup
                 case "--auto-update": options += " -AutoUpdate"; break;
                 case "--cleanup": options += " -CleanupOnly"; break;
                 case "--offline-iso": options += " -OfflineIso"; break;
+                case "--distributions": options += " -ChooseDistribution"; break;
                 case "--chatgpt": options += " -ChatGPT"; break;
                 case "--virtual-drives": options += " -VirtualDrives"; break;
                 case "--smp": options += " -Smp"; break;
@@ -40,7 +41,7 @@ internal static class ArosSetup
                 case "--share": options += " -ShareWindowsFiles"; shareWindowsFiles = true; break;
                 case "--share-write": writableShare = true; break;
                 default:
-                    Console.Error.WriteLine("Usage: AROS-Setup-x64.exe [--update | --auto-update | --cleanup | --offline-iso | --share | --share-write | --windows-desktop | --chatgpt | --wanderer-fullscreen | --virtual-drives | --smp | --driver-debug]");
+                    Console.Error.WriteLine("Usage: AROS-Setup-x64.exe [--update | --auto-update | --cleanup | --offline-iso | --distributions | --share | --share-write | --windows-desktop | --chatgpt | --wanderer-fullscreen | --virtual-drives | --smp | --driver-debug]");
                     return 2;
             }
         }

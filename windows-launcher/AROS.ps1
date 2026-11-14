@@ -9,6 +9,8 @@ param(
     [switch]$WindowsDesktop,
     [ValidateRange(1, 65535)][int]$DesktopPort = 5900,
     [switch]$OfflineIso,
+    [switch]$ChooseDistribution,
+    [ValidateSet('AROSOne32','AROSOne64','Icaros','AspireOS')][string]$Distribution,
     [string]$IsoPath,
     [switch]$ChatGPT,
     [switch]$WandererFullscreen,
@@ -75,6 +77,36 @@ function Assert-IsoImage([string]$Path) {
     } finally {
         $image.Dispose()
     }
+}
+
+function Get-IsoBootProfile([string]$Path) {
+    $file = [IO.File]::OpenRead($Path)
+    try {
+        $descriptor = New-Object byte[] 2048
+        $label = ''
+        for ($sector = 16; $sector -lt 48; $sector++) {
+            $file.Position = $sector * 2048
+            if ($file.Read($descriptor, 0, $descriptor.Length) -ne $descriptor.Length) { break }
+            if ([Text.Encoding]::ASCII.GetString($descriptor, 1, 5) -ne 'CD001') { break }
+            if ($descriptor[0] -eq 255) { break }
+            if ($descriptor[0] -eq 1) {
+                $label = [Text.Encoding]::ASCII.GetString($descriptor, 40, 32).Trim([char]0, [char]32)
+                break
+            }
+        }
+    } finally { $file.Dispose() }
+
+    $identity = "$label $([IO.Path]::GetFileNameWithoutExtension($Path))"
+    $x64 = $identity -match '(?<![a-z0-9])(?:x86[-_ ]?64|amd64|64[-_ ]?bit|abiv11)(?![a-z0-9])'
+    $x86 = $identity -match '(?<![a-z0-9])(?:i[3-6]86|32[-_ ]?bit|abiv0)(?![a-z0-9])'
+    if ($x86 -and $x64) { return }
+    if (!$x64 -and $identity -match 'icaros') { return 'Icaros' }
+    if (!$x64 -and $identity -match 'aspire[-_ ]?os') { return 'AspireOS' }
+    if ($identity -match 'aros[-_ ]?one') {
+        if ($x64) { return 'AROSOne64' }
+        if ($x86) { return 'AROSOne32' }
+    }
+    if ($x86) { return 'x86' }
 }
 
 function Get-AutoUpdatePreference([string]$Path, [switch]$AskAgain) {
@@ -245,13 +277,48 @@ function Select-OfflineIso {
     Add-Type -AssemblyName System.Windows.Forms
     $dialog = New-Object Windows.Forms.OpenFileDialog
     try {
-        $dialog.Title = 'AROS Wizard powered by ChatGPT - Offline-ISO auswaehlen'
+        $dialog.Title = if ($Distribution) { "AROS Wizard - ISO fuer $Distribution auswaehlen" } else {
+            'AROS Wizard powered by ChatGPT - Offline-ISO auswaehlen'
+        }
         $dialog.Filter = 'ISO-Dateien (*.iso)|*.iso'
         $dialog.CheckFileExists = $true
         if ($dialog.ShowDialog() -eq [Windows.Forms.DialogResult]::OK) { $dialog.FileName }
     } finally {
         $dialog.Dispose()
     }
+}
+
+function Select-ArosDistribution {
+    Add-Type -AssemblyName System.Windows.Forms
+    Add-Type -AssemblyName System.Drawing
+    $names = @('AROS One 32 Bit', 'AROS One 64 Bit', 'Icaros Desktop', 'AspireOS')
+    $profiles = @('AROSOne32', 'AROSOne64', 'Icaros', 'AspireOS')
+    $form = New-Object Windows.Forms.Form
+    try {
+        $form.Text = 'AROS Wizard - Distribution auswaehlen'
+        $form.ClientSize = [Drawing.Size]::new(355, 157)
+        $form.StartPosition = 'CenterScreen'
+        $form.FormBorderStyle = 'FixedDialog'
+        $form.MaximizeBox = $false
+        $list = New-Object Windows.Forms.ListBox
+        $list.SetBounds(12, 12, 331, 91)
+        $list.Items.AddRange($names)
+        $list.SelectedIndex = 0
+        $next = New-Object Windows.Forms.Button
+        $next.SetBounds(152, 116, 92, 29)
+        $next.Text = 'ISO waehlen'
+        $next.DialogResult = 'OK'
+        $cancel = New-Object Windows.Forms.Button
+        $cancel.SetBounds(251, 116, 92, 29)
+        $cancel.Text = 'Abbrechen'
+        $cancel.DialogResult = 'Cancel'
+        $form.Controls.AddRange(@($list, $next, $cancel))
+        $form.AcceptButton = $next
+        $form.CancelButton = $cancel
+        if ($form.ShowDialog() -eq [Windows.Forms.DialogResult]::OK) {
+            return $profiles[$list.SelectedIndex]
+        }
+    } finally { $form.Dispose() }
 }
 
 function Select-SmpCpuCount {
@@ -542,7 +609,15 @@ if ($hasSmpTopology) {
     }
     $smpArgument = [string]$SmpCpus
 }
-$useOfflineIso = $OfflineIso -or $PSBoundParameters.ContainsKey('IsoPath') -or $useSmp
+if ($ChooseDistribution -and !$Distribution) {
+    $Distribution = Select-ArosDistribution
+    if (!$Distribution) { return }
+}
+$isLegacyDistribution = $Distribution -in 'AROSOne32', 'Icaros', 'AspireOS'
+if ($isLegacyDistribution -and ($useSmp -or $ChatGPT -or $WandererFullscreen)) {
+    throw 'Dieses 32-Bit-Profil unterstuetzt die ABIv11-Gast-Erweiterungen des Wizards nicht.'
+}
+$useOfflineIso = $OfflineIso -or $PSBoundParameters.ContainsKey('IsoPath') -or $useSmp -or $Distribution
 if ($useOfflineIso -and $Update) {
     throw 'Eine lokale ISO kann nicht gleichzeitig mit -Update gestartet werden.'
 }
@@ -558,6 +633,17 @@ if ($useOfflineIso) {
     }
     $iso = $file.FullName
     Assert-IsoImage $iso
+    if (!$Distribution -and !$useSmp) {
+        $detectedProfile = Get-IsoBootProfile $iso
+        if ($detectedProfile) {
+            Write-Host "ISO-Startprofil erkannt: $detectedProfile"
+            if ($detectedProfile -ne 'x86') { $Distribution = $detectedProfile }
+            $isLegacyDistribution = $detectedProfile -ne 'AROSOne64'
+            if ($isLegacyDistribution -and ($ChatGPT -or $WandererFullscreen)) {
+                throw 'Die erkannte 32-Bit-ISO kann nicht mit ABIv11-Gast-Erweiterungen gestartet werden.'
+            }
+        }
+    }
 }
 
 if ($WindowsDesktop -and ($Update -or $SetupOnly)) {
@@ -608,8 +694,13 @@ try {
         $qemu = Get-OrInstallQemu
         $imageTool = Join-Path (Split-Path -Parent $qemu) 'qemu-img.exe'
         if (!(Test-Path -LiteralPath $imageTool -PathType Leaf)) { throw 'qemu-img.exe fehlt.' }
-        $images = @((Join-Path $data 'DH0.qcow2'), (Join-Path $data 'DH1.qcow2'))
-        $driveSettings = Join-Path $data 'virtual-drive-paths.json'
+        $driveDirectory = $data
+        if ($Distribution) {
+            $driveDirectory = Join-Path $data $Distribution
+            New-Item -ItemType Directory -Path $driveDirectory -Force | Out-Null
+        }
+        $images = @((Join-Path $driveDirectory 'DH0.qcow2'), (Join-Path $driveDirectory 'DH1.qcow2'))
+        $driveSettings = Join-Path $driveDirectory 'virtual-drive-paths.json'
         if (Test-Path -LiteralPath $driveSettings -PathType Leaf) {
             try {
                 $savedPaths = @(Get-Content -LiteralPath $driveSettings -Raw | ConvertFrom-Json)
@@ -729,6 +820,7 @@ try {
     $qemuArgs = @('-m', '1024', '-boot', $bootOrder, '-nic', $network) + $virtualDriveArgs
     if ($smpArgument) { $qemuArgs += @('-smp', $smpArgument) }
     if ($SmpCpuModel) { $qemuArgs += @('-cpu', $SmpCpuModel) }
+    elseif ($isLegacyDistribution) { $qemuArgs += @('-cpu', 'qemu32') }
     if ($iso) { $qemuArgs += @('-cdrom', $iso) }
     if ($DriverDebug) {
         $logRoot = Join-Path $data 'Treiberlogs'
