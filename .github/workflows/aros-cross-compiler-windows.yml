@@ -66,6 +66,19 @@ jobs:
           if source.count(old) != 1:
               raise SystemExit("Expected exactly one MetaMake configure invocation")
           makefile.write_bytes(source.replace(old, new.encode("ascii")))
+          fetch = Path("aros-src/scripts/fetch.sh")
+          source = fetch.read_bytes()
+          anchor = b"# Ensure LOCATION, destination, and BASE are absolute paths."
+          if source.count(anchor) != 1:
+              raise SystemExit("Unexpected archive path normalization")
+          normalize = (
+              b'if command -v cygpath >/dev/null 2>&1; then\n'
+              b'    LOCATION=$(cygpath -au "$LOCATION") || exit 1\n'
+              b'    destination=$(cygpath -au "$destination") || exit 1\n'
+              b'    BASE=$(cygpath -au "$BASE") || exit 1\n'
+              b'fi\n\n'
+          )
+          fetch.write_bytes(source.replace(anchor, normalize + anchor))
           mmake = Path("aros-src/tools/MetaMake/mmake.c")
           source = mmake.read_bytes()
           for old, new in (
