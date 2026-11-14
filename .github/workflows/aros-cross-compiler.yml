@@ -1,4 +1,5 @@
 name: Original AROS cross-compiler
+run-name: Build upstream AROS x86-64
 on:
   push:
     branches: [build/original-aros-cross-compiler]
