@@ -1,28 +1,23 @@
-# BOINC Client for AROS — Languages / Sprachen / Langues / Idiomas
+# BOINC Client for AROS
 
-**Deutsch · English · Français · Português**
+## Deutsch
 
-## Deutsch (DE)
-Dieses Repository ist derzeit leer. Es gibt noch keinen fertigen Client und keinen Build.
+Dieses Projekt entwickelt einen BOINC-Kommandozeilenclient für AROS x86-64. GitHub Actions baut den Client aus dem offiziellen BOINC-Quellcode und erstellt AROS-Cross-Compiler für Linux und Windows.
 
-**Hinweis:** Bedienoberflächen, Quellcode und echte Gerätetests sind nicht automatisch durch diese Übersetzung erledigt.
+## English
 
-## English (EN)
-This repository is currently empty. No working client or build is available yet.
+This project develops a BOINC command-line client for AROS x86-64. GitHub Actions builds the client from the official BOINC source and builds AROS cross-compilers for Linux and Windows.
 
-**Note:** This translation does not itself localize the user interface, change program code, or verify the software on real devices.
+## Français
 
-## Français (FR)
-Ce dépôt est actuellement vide. Aucun client fonctionnel ni compilation n’est encore disponible.
+Ce projet développe un client BOINC en ligne de commande pour AROS x86-64. GitHub Actions compile le client à partir du code source officiel de BOINC et construit les compilateurs croisés AROS pour Linux et Windows.
 
-**Remarque :** Cette traduction ne modifie pas à elle seule l’interface, le code ou les tests sur appareil réel.
+## Português
 
-## Português (PT)
-Este repositório está vazio. Ainda não há cliente funcional nem compilação disponível.
+Este projeto desenvolve um cliente BOINC de linha de comandos para AROS x86-64. O GitHub Actions compila o cliente a partir do código-fonte oficial do BOINC e cria compiladores cruzados AROS para Linux e Windows.
 
-**Aviso:** Esta tradução não altera automaticamente a interface, o código ou os testes em dispositivos reais.
-
-## Project / Projekt / Projet / Projeto
-https://github.com/aurabin/BOINC-Client-for-AROS
-
-Keep code identifiers, command-line options, file paths, licenses, and API fields unchanged.
+- [GitHub Actions](https://github.com/aurabin/BOINC-Client-for-AROS/actions)
+- [BOINC upstream](https://github.com/BOINC/boinc)
+- [AROS upstream](https://github.com/aros-development-team/AROS)
+- [MIT license](../LICENSE)
+- [Third-party notices](../THIRD-PARTY-NOTICES.md)
