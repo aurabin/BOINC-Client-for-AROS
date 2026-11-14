@@ -1,0 +1,80 @@
+name: BOINC client for AROS
+on:
+  push:
+    branches: [build/boinc-aros-x86-64]
+permissions:
+  contents: read
+jobs:
+  client:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    steps:
+      - name: Install host build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential gcc-multilib g++-multilib gawk bison flex \
+            autoconf automake gettext texinfo patch curl wget git zip unzip xz-utils \
+            libtool libtool-bin pkg-config python3-mako cmake ninja-build meson \
+            netpbm nasm yasm byacc libpng-dev libelf-dev liblzma-dev \
+            libncurses-dev liblzo2-dev libzstd-dev zlib1g-dev libexpat1-dev
+      - name: Fetch pinned AROS and BOINC sources
+        shell: bash
+        run: |
+          checkout_source() {
+            git init "$1"
+            git -C "$1" remote add origin "https://github.com/$2.git"
+            git -C "$1" fetch --depth=1 origin "$3"
+            git -C "$1" checkout --detach FETCH_HEAD
+          }
+          checkout_source AROS aros-development-team/AROS ddc6446f762e36a9070f300a457d03e6f137f7d3
+          checkout_source AROS/contrib aros-development-team/contrib a164e1ce270da2e4fda9480d61f7e73f7a11efb6
+          checkout_source BOINC boinc/boinc 4c1073b1781a65dad109ad024eb07bab21e1ba21
+      - name: Build AROS SDK and target libcurl
+        shell: bash
+        run: |
+          mkdir -p build logs
+          cd build
+          ../AROS/configure --target=pc-x86_64 --with-toolchain=gnu 2>&1 | tee ../logs/aros-configure.log
+          make -j"$(nproc)" sdk 2>&1 | tee ../logs/aros-sdk.log
+          make -j"$(nproc)" contrib-curl 2>&1 | tee ../logs/aros-curl.log
+      - name: Cross-compile BOINC client
+        shell: bash
+        run: |
+          tools="$PWD/build/bin/linux-x86_64/tools/crosstools"
+          curl_config=$(find "$PWD/build/bin" -path '*/Developer/bin/curl-config' -print -quit)
+          test -n "$curl_config"
+          sdk=$(dirname "$(dirname "$curl_config")")
+          export PATH="$sdk/bin:$tools:$PATH"
+          export PKG_CONFIG_PATH=
+          export PKG_CONFIG_LIBDIR="$sdk/lib/pkgconfig:$sdk/share/pkgconfig"
+          export CC="$tools/x86_64-aros-gcc"
+          export CXX="$tools/x86_64-aros-g++"
+          export AR="$tools/x86_64-aros-ar"
+          export RANLIB="$tools/x86_64-aros-ranlib"
+          export CPPFLAGS="-I$sdk/include"
+          export LDFLAGS="--sysroot=$sdk -L$sdk/lib"
+          export LIBCURL_CPPFLAGS="-I$sdk/include"
+          export LIBCURL="-lcurl -lssl -lcrypto -lz -lzstd -lbrotlidec -lbrotlicommon -lpthread -lmiami -lnet"
+          cd BOINC
+          ./_autosetup 2>&1 | tee ../logs/boinc-autosetup.log
+          ./configure --build="$(gcc -dumpmachine)" --host=x86_64-aros \
+            --disable-server --disable-manager --disable-fcgi --disable-shared \
+            2>&1 | tee ../logs/boinc-configure.log
+          make -j"$(nproc)" 2>&1 | tee ../logs/boinc-build.log
+          readelf -h client/boinc | tee ../logs/boinc-elf.log
+          sha256sum client/boinc > ../boinc.sha256
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: boinc-client-aros-x86-64
+          path: |
+            BOINC/client/boinc
+            boinc.sha256
+          if-no-files-found: error
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: boinc-aros-build-logs
+          path: |
+            logs/
+            build/config.log
+            BOINC/config.log
