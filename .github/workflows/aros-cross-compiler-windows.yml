@@ -65,6 +65,16 @@ jobs:
           if source.count(old) != 1:
               raise SystemExit("Expected exactly one MetaMake configure invocation")
           makefile.write_bytes(source.replace(old, new.encode("ascii")))
+          mmake = Path("aros-src/tools/MetaMake/mmake.c")
+          source = mmake.read_bytes()
+          for old, new in (
+              (b'setenv("_MMAKE_TARGET", tname, 1);', b'_putenv_s("_MMAKE_TARGET", tname);'),
+              (b'unsetenv("_MMAKE_TARGET");', b'_putenv_s("_MMAKE_TARGET", "");'),
+          ):
+              if source.count(old) != 1:
+                  raise SystemExit("Unexpected MetaMake environment-variable code")
+              source = source.replace(old, new)
+          mmake.write_bytes(source)
           PY
           mkdir aros-build
           cd aros-build
