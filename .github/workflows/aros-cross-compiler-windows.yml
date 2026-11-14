@@ -1,0 +1,58 @@
+name: AROS cross-compiler for Windows x64
+on:
+  push:
+    branches: [build/aros-cross-compiler-windows-x64]
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: windows-2025
+    timeout-minutes: 240
+    steps:
+      - uses: msys2/setup-msys2@ec48f7c5447b3140e2b088413ae3a55687bccb6e
+        with:
+          msystem: UCRT64
+          update: true
+          install: base-devel git curl wget unzip zip patch python mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-binutils mingw-w64-ucrt-x86_64-cmake mingw-w64-ucrt-x86_64-ninja
+      - name: Build upstream GNU tools for AROS x86-64
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          mkdir -p logs
+          cd /tmp
+          git config --global core.autocrlf false
+          git init aros-src
+          git -C aros-src remote add origin https://github.com/aros-development-team/AROS.git
+          git -C aros-src fetch --depth=1 origin ddc6446f762e36a9070f300a457d03e6f137f7d3
+          git -C aros-src checkout --detach FETCH_HEAD
+          mkdir aros-build
+          cd aros-build
+          logdir="$(cygpath -u "$GITHUB_WORKSPACE")/logs"
+          ../aros-src/configure --host=x86_64-w64-mingw32 --build=x86_64-w64-mingw32 --target=pc-x86_64 --with-toolchain=gnu 2>&1 | tee "$logdir/configure.log"
+          make -j"$(nproc)" crosstools-toolchain 2>&1 | tee "$logdir/build.log"
+      - name: Test Windows executable and package toolchain
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          cc=$(find /tmp/aros-build/bin -type f -name x86_64-aros-gcc.exe -print -quit)
+          test -n "$cc"
+          test "$("$cc" -dumpmachine)" = x86_64-aros
+          printf 'int aros_smoke(void) { return 0; }\n' > smoke.c
+          "$cc" -ffreestanding -c smoke.c -o smoke.o
+          readelf -h smoke.o
+          cp -a "$(dirname "$cc")" aros-cross-compiler
+          for dll in libstdc++-6.dll libgcc_s_seh-1.dll libwinpthread-1.dll; do
+            cp "/ucrt64/bin/$dll" aros-cross-compiler/
+          done
+          zip -qr aros-cross-compiler-windows-x64.zip aros-cross-compiler
+          sha256sum aros-cross-compiler-windows-x64.zip > aros-cross-compiler-windows-x64.zip.sha256
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: aros-cross-compiler-windows-x64
+          path: aros-cross-compiler-windows-x64.zip*
+          if-no-files-found: error
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: aros-windows-build-logs
+          path: logs/
