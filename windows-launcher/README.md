@@ -4,6 +4,12 @@ Windows x64 launcher for AROS ABIv11 in QEMU.
 
 ## Start and update
 
+### Native AROS update preference
+
+Build `guest/SystemUpdates.c` with the ABIv11 SDK (`gcc -std=c99 -o SystemUpdates SystemUpdates.c`) and install the binary as `SYS:Prefs/SystemUpdates`. Run `SYS:Prefs/SystemUpdates --icon` once to create its Wanderer icon if none exists. Open **Prefs  SystemUpdates** to enable or disable prepared updates; the preference is stored in ENVARC.
+
+Add `SYS:Prefs/SystemUpdates --apply` near the start of `S:Startup-Sequence`, before loading components the package replaces. Stage a trusted, version-matched file payload in `SYS:AROSWizard/Update/files`, preserving its directory layout. Write its relative file paths, one per line, to `SYS:AROSWizard/Update/ready.txt` after staging finishes. Destination directories must already exist. Use regular files and directories, without links. The updater skips `.info` entries and leaves existing icons and their metadata in place. It installs prepared files only; it does not download packages or execute vendor installer scripts. A multi-file update is not atomic.
+
 On the first normal managed ISO boot, the Wizard asks whether automatic ISO updates are wanted. Yes and No are saved per Wizard installation. Cancel leaves the choice as it was. Run **AROS-Update-Einstellungen.cmd** to change the setting without booting.
 
 - **AROS-starten.cmd** boots the locally cached AROS ABIv11 ISO in QEMU. A fresh setup discovers and downloads the latest matching boot ISO from AxRuntime. QEMU is installed via WinGet when needed.
