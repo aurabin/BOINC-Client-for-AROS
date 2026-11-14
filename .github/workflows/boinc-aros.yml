@@ -44,8 +44,19 @@ jobs:
           sdk="$PWD/bin/pc-x86_64/AROS/Developer"
           test -s "$sdk/lib/libcrypto.a"
           test -s "$sdk/lib/libssl.a"
+          # AROS adds its guest root via PKG_CONFIG_SYSROOT_DIR.
+          # Express paths inside .pc files relative to that guest root.
+          for pc in "$sdk/lib/pkgconfig/"*.pc; do
+            sed -i "s|$sdk|/Developer|g" "$pc"
+          done
           export PKG_CONFIG_LIBDIR="$sdk/lib/pkgconfig"
+          export PKG_CONFIG_SYSROOT_DIR="$(dirname "$sdk")"
           export PKG_CONFIG_PATH=
+          pkg-config --static --cflags --libs openssl | tee ../logs/openssl-pkg-config.log
+          printf '#include <openssl/ssl.h>\nint main(void) { return OPENSSL_init_ssl(0, 0) != 1; }\n' > openssl-probe.c
+          "$PWD/bin/linux-x86_64/tools/crosstools/x86_64-aros-gcc" --sysroot="$sdk" \
+            $(pkg-config --cflags openssl) openssl-probe.c -o openssl-probe \
+            $(pkg-config --static --libs openssl) -lmiami -lnet 2>&1 | tee ../logs/openssl-link.log
           make -j"$(nproc)" contrib-curl 2>&1 | tee ../logs/aros-curl.log
       - name: Cross-compile BOINC client
         shell: bash
@@ -57,6 +68,7 @@ jobs:
           export PATH="$sdk/bin:$tools:$PATH"
           export PKG_CONFIG_PATH=
           export PKG_CONFIG_LIBDIR="$sdk/lib/pkgconfig:$sdk/share/pkgconfig"
+          export PKG_CONFIG_SYSROOT_DIR="$(dirname "$sdk")"
           export CC="$tools/x86_64-aros-gcc"
           export CXX="$tools/x86_64-aros-g++"
           export AR="$tools/x86_64-aros-ar"
@@ -88,4 +100,6 @@ jobs:
             logs/
             build/config.log
             BOINC/config.log
+            build/bin/pc-x86_64/gen/contrib/development/libs/curl/**/config.log
+            build/bin/pc-x86_64/Ports/**/config.log
             build/bin/pc-x86_64/gen/contrib/development/libs/curl/**/config.log
