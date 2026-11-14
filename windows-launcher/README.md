@@ -6,7 +6,9 @@ Windows x64 launcher for AROS ABIv11 in QEMU.
 
 - **AROS-starten.cmd** boots the locally cached AROS ABIv11 ISO in QEMU. A fresh setup discovers and downloads the latest matching boot ISO from AxRuntime. QEMU is installed via WinGet when needed.
 - **AROS-aktualisieren.cmd** checks AxRuntime for a newer x86-64 ABIv11 boot ISO and downloads it without starting the VM. The previous ISO stays in AROS-Daten. A failed download leaves the previous ISO available for the next normal start.
+- **AROS-AutoUpdate.cmd** or the EXE flag `--auto-update` checks the official release index before each ISO boot. It starts the previous cached ISO if the update fails. This updates the boot image cache only. Explicit local ISOs and installed DH0 systems use their selected boot media.
 - Keep the launcher beside the original AROS-Daten folder to reuse an existing installation. Exit QEMU before updating. The updater checks boot images, not Windows launcher versions or in-guest packages.
+- The Wizard removes its abandoned download staging files and session-port files older than 24 hours after acquiring the launcher lock. Use **AROS-Bereinigen.cmd** or `--cleanup` to run the cleanup without booting AROS. Cached boot ISOs, virtual disks, exchange files, and diagnostic logs are retained.
 
 ## Start from an offline ISO
 
@@ -37,6 +39,22 @@ The guest kernel in the chosen ISO determines how many of the supplied CPUs it c
 Run **AROS-Treiberdebug.cmd** or use `--driver-debug` with the EXE. Each run creates a directory under `AROS-Daten/Treiberlogs` with QEMU's guest-error log and the guest's serial output. To capture AROS kernel messages, add `debug=serial` to the AROS kernel line in the GRUB boot menu. A debug build of the affected driver may provide more detail.
 
 The switch can be combined with `-OfflineIso`, `-VirtualDrives` for virtual IDE storage, `-ShareWindowsFiles` for USB mass storage, and the Wizard features that enable the RTL8139 virtual network adapter. Reproduce the issue with one device at a time to identify the failing path.
+
+### PCI inventory and matching code in AROS
+
+Build `guest/DriverScan.c` with the ABIv11 SDK and the PCI HIDD stubs, for example `gcc -O2 -o DriverScan DriverScan.c -lhiddstubs -loop` where those libraries are installed. Run `DriverScan >RAM:hardware.csv` in AROShell to enumerate PCI functions. The initial matching list identifies RTL8129 and RTL8138/8139 as candidates for the existing rtl8139.device. A candidate match alone does not show that the device is bound or functional.
+
+Run `DriverScan >RAM:DriverMatches.c --autocode` for a C match table of unmapped functions. This is a starting point for a port and performs no register access. Native USB, ACPI, and device binding inventories require additional bus-specific support. No generated code is installed into the guest.
+
+## Virtual Field Generator proposal
+
+A native AROS editor, launched from Wanderer, would let you place images, text and animated objects on a canvas and preview the result from the same window. Start with a two-dimensional field that can recreate the Boing Ball demo.
+
+- Use a Zune window for the object list, canvas and properties. Each object stores its position, size, layer and optional motion. The preview can be paused and restarted.
+- Save the editable scene and its assets in a project drawer. Store asset paths relative to the drawer so it can move between DH0, DH1 and the Windows exchange folder.
+- Save a portable HTML preview from the same scene data so a field can also be opened on Windows. Start with local images and text, then add sound and additional animation types after the save and reload workflow is stable.
+
+The first acceptance test is to build a scene from two local assets, save it to DH0, reopen it in AROS, and compare the exported preview with the AROS preview. This is a proposed guest application.
 
 ## Windows file exchange
 

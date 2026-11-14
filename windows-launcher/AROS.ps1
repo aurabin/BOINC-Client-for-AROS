@@ -1,6 +1,8 @@
 param(
     [switch]$SetupOnly,
     [switch]$Update,
+    [switch]$AutoUpdate,
+    [switch]$CleanupOnly,
     [switch]$ShareWindowsFiles,
     [switch]$WritableShare,
     [switch]$WindowsDesktop,
@@ -269,7 +271,7 @@ function Select-SmpCpuCount {
 }
 
 function Save-ArosImage([string]$Release, [string]$Destination) {
-    $stage = Join-Path $data ([guid]::NewGuid().ToString('N'))
+    $stage = Join-Path $data ('iso-staging-' + [guid]::NewGuid().ToString('N'))
     New-Item -ItemType Directory -Path $stage | Out-Null
     $archivePath = Join-Path $stage 'aros.zip'
     $imagePath = Join-Path $stage 'aros.iso'
@@ -292,6 +294,44 @@ function Save-ArosImage([string]$Release, [string]$Destination) {
     } finally {
         Remove-Item -LiteralPath $archivePath, $imagePath, $stage -ErrorAction SilentlyContinue
     }
+}
+
+function Clear-LauncherTemporaryFiles([string]$Directory) {
+    $cutoff = [DateTime]::UtcNow.AddDays(-1)
+    $removed = 0
+    if ((Get-Item -LiteralPath $Directory -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) {
+        return $removed
+    }
+    foreach ($entry in Get-ChildItem -LiteralPath $Directory -Force) {
+        if ($entry.LastWriteTimeUtc -gt $cutoff -or
+            ($entry.Attributes -band [IO.FileAttributes]::ReparsePoint)) { continue }
+        if (!$entry.PSIsContainer) {
+            if ($entry.Name -match '^[0-9a-f]{32}\.(chat|fullscreen)-port$') {
+                try {
+                    Remove-Item -LiteralPath $entry.FullName -Force
+                    $removed++
+                } catch { Write-Verbose $_.Exception.Message }
+            }
+            continue
+        }
+        if ($entry.Name -notmatch '^iso-staging-[0-9a-f]{32}$') { continue }
+        $children = @(Get-ChildItem -LiteralPath $entry.FullName -Force)
+        $unexpected = @($children | Where-Object {
+            $_.PSIsContainer -or ($_.Attributes -band [IO.FileAttributes]::ReparsePoint) -or
+                $_.Name -notin 'aros.zip', 'aros.iso'
+        })
+        if ($unexpected.Count) { continue }
+        foreach ($child in $children) {
+            Remove-Item -LiteralPath $child.FullName -Force -ErrorAction SilentlyContinue
+        }
+        if (!(Get-ChildItem -LiteralPath $entry.FullName -Force)) {
+            try {
+                [IO.Directory]::Delete($entry.FullName)
+                $removed++
+            } catch { Write-Verbose $_.Exception.Message }
+        }
+    }
+    return $removed
 }
 
 function Assert-ShareHasNoLinks([IO.DirectoryInfo]$Folder) {
@@ -528,6 +568,11 @@ try {
 }
 
 try {
+    $removed = Clear-LauncherTemporaryFiles $data
+    if ($CleanupOnly) {
+        Write-Host "Bereinigung abgeschlossen: $removed temporaere Eintraege entfernt."
+        return
+    }
     $qemu = $null
     $configuration = $null
     $bootOrder = 'd'
@@ -578,7 +623,7 @@ try {
         }
         $installed = @((Get-ReleaseOrder $cached))[0]
         $target = $installed
-        if ($Update -or !$installed) {
+        if ($Update -or $AutoUpdate -or !$installed) {
             try {
                 $index = Invoke-WebRequest -UseBasicParsing -Uri $baseUrl -TimeoutSec 30
                 $available = @([regex]::Matches(
@@ -588,17 +633,28 @@ try {
                 $target = @(Get-ReleaseOrder ($available + @($cached) + $baseline))[0]
             } catch {
                 if ($Update) { throw }
-                Write-Warning 'Versionsliste nicht erreichbar. Verwende die mitgelieferte Download-Adresse.'
-                $target = $baseline
+                if ($installed) {
+                    Write-Warning 'Versionsliste nicht erreichbar. Starte das vorhandene ISO.'
+                    $target = $installed
+                } else {
+                    Write-Warning 'Versionsliste nicht erreichbar. Verwende die mitgelieferte Download-Adresse.'
+                    $target = $baseline
+                }
             }
         }
 
+        if ($cached -notcontains $target) {
+            try {
+                Save-ArosImage $target (Join-Path $data "AROS-$target.iso")
+            } catch {
+                if (!$AutoUpdate -or $Update -or !$installed) { throw }
+                Write-Warning "Update auf AROS $target fehlgeschlagen. Starte AROS $installed."
+                $target = $installed
+            }
+        }
         $iso = Join-Path $data "AROS-$target.iso"
         if ($target -eq $baseline -and $cached -contains $baseline -and !(Test-Path -LiteralPath $iso)) {
             $iso = $legacy
-        }
-        if ($cached -notcontains $target) {
-            Save-ArosImage $target $iso
         }
         if ($Update) {
             Write-Host "AROS $target ist lokal verfuegbar."
