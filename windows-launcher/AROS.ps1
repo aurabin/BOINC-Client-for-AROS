@@ -4,7 +4,9 @@ param(
     [switch]$ShareWindowsFiles,
     [switch]$WritableShare,
     [switch]$WindowsDesktop,
-    [ValidateRange(1, 65535)][int]$DesktopPort = 5900
+    [ValidateRange(1, 65535)][int]$DesktopPort = 5900,
+    [switch]$OfflineIso,
+    [string]$IsoPath
 )
 
 $ErrorActionPreference = 'Stop'
@@ -33,6 +35,33 @@ function Find-Qemu {
     }
 }
 
+function Assert-IsoImage([string]$Path) {
+    $image = [IO.File]::OpenRead($Path)
+    try {
+        $image.Position = 32769
+        $signature = New-Object byte[] 5
+        if ($image.Read($signature, 0, 5) -ne 5 -or
+            [Text.Encoding]::ASCII.GetString($signature) -ne 'CD001') {
+            throw "Die Datei hat keinen ISO-9660-Header: $Path"
+        }
+    } finally {
+        $image.Dispose()
+    }
+}
+
+function Select-OfflineIso {
+    Add-Type -AssemblyName System.Windows.Forms
+    $dialog = New-Object Windows.Forms.OpenFileDialog
+    try {
+        $dialog.Title = 'Lokales AROS-Startabbild auswaehlen'
+        $dialog.Filter = 'ISO-Dateien (*.iso)|*.iso'
+        $dialog.CheckFileExists = $true
+        if ($dialog.ShowDialog() -eq [Windows.Forms.DialogResult]::OK) { $dialog.FileName }
+    } finally {
+        $dialog.Dispose()
+    }
+}
+
 function Save-ArosImage([string]$Release, [string]$Destination) {
     $stage = Join-Path $data ([guid]::NewGuid().ToString('N'))
     New-Item -ItemType Directory -Path $stage | Out-Null
@@ -52,17 +81,7 @@ function Save-ArosImage([string]$Release, [string]$Destination) {
             $archive.Dispose()
         }
 
-        $image = [IO.File]::OpenRead($imagePath)
-        try {
-            $image.Position = 32769
-            $signature = New-Object byte[] 5
-            if ($image.Read($signature, 0, 5) -ne 5 -or
-                [Text.Encoding]::ASCII.GetString($signature) -ne 'CD001') {
-                throw 'Das heruntergeladene ISO hat keinen ISO-9660-Header.'
-            }
-        } finally {
-            $image.Dispose()
-        }
+        Assert-IsoImage $imagePath
         [IO.File]::Move($imagePath, $Destination)
     } finally {
         Remove-Item -LiteralPath $archivePath, $imagePath, $stage -ErrorAction SilentlyContinue
@@ -83,6 +102,24 @@ function Assert-ShareHasNoLinks([IO.DirectoryInfo]$Folder) {
 
 if ($WritableShare -and !$ShareWindowsFiles) {
     throw '-WritableShare benoetigt -ShareWindowsFiles.'
+}
+
+$useOfflineIso = $OfflineIso -or $PSBoundParameters.ContainsKey('IsoPath')
+if ($useOfflineIso -and $Update) {
+    throw 'Eine lokale ISO kann nicht gleichzeitig mit -Update gestartet werden.'
+}
+if ($useOfflineIso) {
+    if (!$PSBoundParameters.ContainsKey('IsoPath')) {
+        $IsoPath = Select-OfflineIso
+        if (!$IsoPath) { return }
+    }
+    if ([string]::IsNullOrWhiteSpace($IsoPath)) { throw 'Bitte einen ISO-Pfad angeben.' }
+    $file = Get-Item -LiteralPath $IsoPath
+    if ($file -isnot [IO.FileInfo] -or $file.Extension -ne '.iso') {
+        throw "Bitte eine ISO-Datei auswaehlen: $IsoPath"
+    }
+    $iso = $file.FullName
+    Assert-IsoImage $iso
 }
 
 if ($WindowsDesktop -and ($Update -or $SetupOnly)) {
@@ -115,50 +152,53 @@ try {
 }
 
 try {
-    $cached = @(
-        Get-ChildItem -LiteralPath $data -File -Filter 'AROS-*.iso' |
-            ForEach-Object {
-                if ($_.Length -gt 32774 -and $_.Name -match "^AROS-($releasePattern)\.iso$") {
-                    $Matches[1]
+    if (!$useOfflineIso) {
+        $cached = @(
+            Get-ChildItem -LiteralPath $data -File -Filter 'AROS-*.iso' |
+                ForEach-Object {
+                    if ($_.Length -gt 32774 -and $_.Name -match "^AROS-($releasePattern)\.iso$") {
+                        $Matches[1]
+                    }
                 }
-            }
-    )
-    $legacy = Join-Path $data 'AROS-x86-64.iso'
-    if ((Test-Path -LiteralPath $legacy -PathType Leaf) -and
-        (Get-Item -LiteralPath $legacy).Length -gt 32774) {
-        $cached += $baseline
-    }
-    $installed = @((Get-ReleaseOrder $cached))[0]
-    $target = $installed
-    if ($Update -or !$installed) {
-        try {
-            $index = Invoke-WebRequest -UseBasicParsing -Uri $baseUrl -TimeoutSec 30
-            $available = @([regex]::Matches(
-                $index.Content, 'href="AROS-(' + $releasePattern + ')-pc-x86_64-boot-iso\.zip"'
-            ) | ForEach-Object { $_.Groups[1].Value })
-            if (!$available.Count) { throw 'Keine passenden AROS-ISO-Archive gefunden.' }
-            $target = @(Get-ReleaseOrder ($available + @($cached) + $baseline))[0]
-        } catch {
-            if ($Update) { throw }
-            Write-Warning 'Versionsliste nicht erreichbar. Verwende die mitgelieferte Download-Adresse.'
-            $target = $baseline
+        )
+        $legacy = Join-Path $data 'AROS-x86-64.iso'
+        if ((Test-Path -LiteralPath $legacy -PathType Leaf) -and
+            (Get-Item -LiteralPath $legacy).Length -gt 32774) {
+            $cached += $baseline
         }
-    }
+        $installed = @((Get-ReleaseOrder $cached))[0]
+        $target = $installed
+        if ($Update -or !$installed) {
+            try {
+                $index = Invoke-WebRequest -UseBasicParsing -Uri $baseUrl -TimeoutSec 30
+                $available = @([regex]::Matches(
+                    $index.Content, 'href="AROS-(' + $releasePattern + ')-pc-x86_64-boot-iso\.zip"'
+                ) | ForEach-Object { $_.Groups[1].Value })
+                if (!$available.Count) { throw 'Keine passenden AROS-ISO-Archive gefunden.' }
+                $target = @(Get-ReleaseOrder ($available + @($cached) + $baseline))[0]
+            } catch {
+                if ($Update) { throw }
+                Write-Warning 'Versionsliste nicht erreichbar. Verwende die mitgelieferte Download-Adresse.'
+                $target = $baseline
+            }
+        }
 
-    $iso = Join-Path $data "AROS-$target.iso"
-    if ($target -eq $baseline -and $cached -contains $baseline -and !(Test-Path -LiteralPath $iso)) {
-        $iso = $legacy
-    }
-    if ($cached -notcontains $target) {
-        Save-ArosImage $target $iso
-    }
-    if ($Update) {
-        Write-Host "AROS $target ist lokal verfuegbar."
-        return
+        $iso = Join-Path $data "AROS-$target.iso"
+        if ($target -eq $baseline -and $cached -contains $baseline -and !(Test-Path -LiteralPath $iso)) {
+            $iso = $legacy
+        }
+        if ($cached -notcontains $target) {
+            Save-ArosImage $target $iso
+        }
+        if ($Update) {
+            Write-Host "AROS $target ist lokal verfuegbar."
+            return
+        }
     }
 
     $qemu = Find-Qemu
     if (!$qemu) {
+        if ($useOfflineIso) { throw 'Fuer den Offline-Start muss QEMU bereits installiert sein.' }
         Write-Host 'QEMU fehlt. Windows Paket-Manager startet die Installation.'
         if (!(Get-Command winget.exe -ErrorAction SilentlyContinue)) {
             throw 'WinGet fehlt. Installiere QEMU von https://www.qemu.org/download/ und starte erneut.'

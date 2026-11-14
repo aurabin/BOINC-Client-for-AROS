@@ -25,11 +25,12 @@ internal static class ArosSetup
             switch (arg)
             {
                 case "--update": options += " -Update"; break;
+                case "--offline-iso": options += " -OfflineIso"; break;
                 case "--windows-desktop": options += " -WindowsDesktop"; break;
                 case "--share": options += " -ShareWindowsFiles"; shareWindowsFiles = true; break;
                 case "--share-write": writableShare = true; break;
                 default:
-                    Console.Error.WriteLine("Usage: AROS-Setup-x64.exe [--update | --share | --share-write | --windows-desktop]");
+                    Console.Error.WriteLine("Usage: AROS-Setup-x64.exe [--update | --offline-iso | --share | --share-write | --windows-desktop]");
                     return 2;
             }
         }
@@ -50,7 +51,7 @@ internal static class ArosSetup
 
             ProcessStartInfo start = new ProcessStartInfo(
                 Path.Combine(Environment.SystemDirectory, @"WindowsPowerShell\v1.0\powershell.exe"),
-                "-NoProfile -ExecutionPolicy Bypass -File \"" + temporaryScript + "\"" + options);
+                "-NoProfile -Sta -ExecutionPolicy Bypass -File \"" + temporaryScript + "\"" + options);
             start.UseShellExecute = false;
             start.EnvironmentVariables["AROS_SETUP_DIRECTORY"] = AppDomain.CurrentDomain.BaseDirectory;
             using (Process process = Process.Start(start))

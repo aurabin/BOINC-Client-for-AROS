@@ -6,6 +6,12 @@
 - **AROS-aktualisieren.cmd** checks AxRuntime for a newer x86-64 ABIv11 boot ISO and downloads it without starting the VM. The previous ISO stays in AROS-Daten. A failed download leaves the previous ISO available for the next normal start.
 - Keep the launcher beside the original AROS-Daten folder to reuse an existing installation. Exit QEMU before updating. The updater checks boot images, not Windows launcher versions or in-guest packages.
 
+## Start from an offline ISO
+
+Double-click **AROS-Offline-ISO.cmd** and select a local bootable AROS x86-64 ISO. Extract the ISO first if it came in a ZIP. The launcher checks the ISO-9660 header and boots the selected file directly. It skips downloads and leaves the installed AROS image cache untouched. QEMU must already be installed. Cancel closes the picker without starting anything.
+
+To pass a path directly, run `AROS-starten.cmd -IsoPath "D:\Images\AROS.iso"`. To select an ISO and use Windows desktop mode in the same session, run `AROS-Offline-ISO.cmd -WindowsDesktop`.
+
 ## Windows file exchange
 
 Start **AROS-Dateiaustausch.cmd** once to create the AROS-Austausch folder beside the launcher. Close QEMU, copy the files you want to share into that folder, then start the same launcher again. QEMU presents the folder to AROS as a virtual USB FAT disk labeled **WINDOWS**. In Wanderer, look for the WINDOWS volume. If it is missing, open Prefs/Trident and check whether the USB mass-storage device is detected.
@@ -32,6 +38,6 @@ From PowerShell in this directory, run:
 
     & "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe" /nologo /target:exe /platform:x64 /out:AROS-Setup-x64.exe /resource:AROS.ps1,AROS.ps1 ArosSetup.cs
 
-The resulting EXE accepts --update, --share, --share-write, and --windows-desktop. Double-click it for a normal boot.
+The resulting EXE accepts --update, --offline-iso, --share, --share-write, and --windows-desktop. Double-click it for a normal boot.
 
 The Windows launcher is MIT-licensed. AROS and QEMU retain their own licenses.
