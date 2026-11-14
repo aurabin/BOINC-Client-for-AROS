@@ -49,6 +49,23 @@ jobs:
           grep -F -- "$old" "$parser"
           sed -i "s/$old/mkdir (path);/" "$parser"
           grep -F -- 'mkdir (path);' "$parser"
+          # Autoconf must resolve MetaMake's auxiliary files in MSYS path syntax.
+          for auxiliary in install-sh config.guess config.sub; do
+            test -s "aros-src/tools/MetaMake/$auxiliary"
+          done
+          /usr/bin/python - <<'PY'
+          from pathlib import Path
+          makefile = Path("aros-src/Makefile.in")
+          source = makefile.read_text()
+          old = "$(GENDIR)/tools/MetaMake/configure --prefix=$(TOOLDIR)"
+          new = ('sh "$(cygpath -u "$(GENDIR)/tools/MetaMake/configure")" '
+                 '--srcdir="$(cygpath -u "$(GENDIR)/tools/MetaMake")" '
+                 '--build=x86_64-w64-mingw32 --host=x86_64-w64-mingw32 '
+                 '--prefix=$(TOOLDIR)')
+          if source.count(old) != 1:
+              raise SystemExit("Expected exactly one MetaMake configure invocation")
+          makefile.write_text(source.replace(old, new))
+          PY
           mkdir aros-build
           cd aros-build
           logdir="$(cygpath -u "$GITHUB_WORKSPACE")/logs"
