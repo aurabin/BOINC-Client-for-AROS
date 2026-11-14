@@ -108,9 +108,11 @@ jobs:
           cc=$(find /tmp/aros-build/bin -type f -name x86_64-aros-gcc.exe -print -quit)
           test -n "$cc"
           test "$("$cc" -dumpmachine)" = x86_64-aros
-          printf 'int aros_smoke(void) { return 0; }\n' > smoke.c
-          "$cc" -ffreestanding -c smoke.c -o smoke.o
-          readelf -h smoke.o
+          probe_dir="$(mktemp -d)"
+          trap 'rm -f -- "$probe_dir/smoke.c" "$probe_dir/smoke.o"; rmdir -- "$probe_dir"' EXIT
+          printf 'int aros_smoke(void) { return 0; }\n' > "$probe_dir/smoke.c"
+          "$cc" -ffreestanding -c "$probe_dir/smoke.c" -o "$probe_dir/smoke.o"
+          readelf -h "$probe_dir/smoke.o"
           cp -a "$(dirname "$cc")" aros-cross-compiler
           for dll in libstdc++-6.dll libgcc_s_seh-1.dll libwinpthread-1.dll; do
             cp "/ucrt64/bin/$dll" aros-cross-compiler/
@@ -120,7 +122,9 @@ jobs:
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: aros-cross-compiler-windows-x64
-          path: aros-cross-compiler-windows-x64.zip*
+          path: |
+            aros-cross-compiler-windows-x64.zip
+            aros-cross-compiler-windows-x64.zip.sha256
           if-no-files-found: error
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
