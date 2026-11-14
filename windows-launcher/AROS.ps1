@@ -15,7 +15,8 @@ param(
     [ValidateRange(1, 255)][int]$SmpSockets = 1,
     [ValidateRange(1, 255)][int]$SmpCores = 1,
     [ValidateRange(1, 255)][int]$SmpThreads = 1,
-    [ValidatePattern('^[A-Za-z0-9_.-]+$')][string]$SmpCpuModel
+    [ValidatePattern('^[A-Za-z0-9_.-]+$')][string]$SmpCpuModel,
+    [switch]$DriverDebug
 )
 
 $ErrorActionPreference = 'Stop'
@@ -381,6 +382,9 @@ $chatBridge = {
 if ($VirtualDrives -and ($Update -or $SetupOnly)) {
     throw '-VirtualDrives benoetigt einen normalen VM-Start.'
 }
+if ($DriverDebug -and ($Update -or $SetupOnly)) {
+    throw '-DriverDebug benoetigt einen normalen VM-Start.'
+}
 if ($WandererFullscreen -and ($Update -or $SetupOnly)) {
     throw '-WandererFullscreen benoetigt einen normalen VM-Start.'
 }
@@ -640,6 +644,16 @@ try {
     if ($smpArgument) { $qemuArgs += @('-smp', $smpArgument) }
     if ($SmpCpuModel) { $qemuArgs += @('-cpu', $SmpCpuModel) }
     if ($iso) { $qemuArgs += @('-cdrom', $iso) }
+    if ($DriverDebug) {
+        $logRoot = Join-Path $data 'Treiberlogs'
+        $logDirectory = Join-Path $logRoot ([DateTime]::Now.ToString('yyyyMMdd-HHmmss') + '-' + [guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $logDirectory -Force | Out-Null
+        $qemuLog = Join-Path $logDirectory 'qemu.log'
+        $serialLog = Join-Path $logDirectory 'aros-seriell.log'
+        $qemuArgs += @('-d', 'guest_errors,unimp', '-D', $qemuLog)
+        Write-Host "Treiberlogs: $logDirectory"
+        Write-Host 'Fuer AROS-Kernelmeldungen debug=serial zur Kernel-Zeile im GRUB-Menue hinzufuegen.'
+    }
     if ($WandererFullscreen) {
         $sessionId = [guid]::NewGuid().ToString('N')
         $windowName = "AROS-Wizard-$sessionId"
@@ -654,7 +668,16 @@ try {
         if ($fullscreenPort -notmatch '^[0-9]+$') {
             throw 'Der Windows-Vollbildkanal konnte nicht gestartet werden.'
         }
-        $qemuArgs += @('-display', 'gtk', '-name', $windowName, '-serial', "tcp:127.0.0.1:$fullscreenPort")
+        $qemuArgs += @('-display', 'gtk', '-name', $windowName)
+        if ($DriverDebug) {
+            $logPath = $serialLog.Replace(',', ',,')
+            $qemuArgs += @('-chardev', "socket,id=wizardserial,host=127.0.0.1,port=$fullscreenPort,logfile=$logPath",
+                '-serial', 'chardev:wizardserial')
+        } else {
+            $qemuArgs += @('-serial', "tcp:127.0.0.1:$fullscreenPort")
+        }
+    } elseif ($DriverDebug) {
+        $qemuArgs += @('-serial', "file:$serialLog")
     }
     if ($ShareWindowsFiles) {
         $share = Join-Path $root 'AROS-Austausch'

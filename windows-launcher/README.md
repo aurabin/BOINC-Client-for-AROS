@@ -32,6 +32,12 @@ Open **AROS-SMP.cmd** or run the EXE with `--smp`. Choose a virtual CPU count fr
 
 The guest kernel in the chosen ISO determines how many of the supplied CPUs it can bring online. The stable cached ABIv11 image is used by the normal one-CPU launch. Use separate images for experimental guest installs.
 
+## Driver diagnostics
+
+Run **AROS-Treiberdebug.cmd** or use `--driver-debug` with the EXE. Each run creates a directory under `AROS-Daten/Treiberlogs` with QEMU's guest-error log and the guest's serial output. To capture AROS kernel messages, add `debug=serial` to the AROS kernel line in the GRUB boot menu. A debug build of the affected driver may provide more detail.
+
+The switch can be combined with `-OfflineIso`, `-VirtualDrives` for virtual IDE storage, `-ShareWindowsFiles` for USB mass storage, and the Wizard features that enable the RTL8139 virtual network adapter. Reproduce the issue with one device at a time to identify the failing path.
+
 ## Windows file exchange
 
 Start **AROS-Dateiaustausch.cmd** once to create the AROS-Austausch folder beside the launcher. Close QEMU, copy the files you want to share into that folder, then start the same launcher again. QEMU presents the folder to AROS as a virtual USB FAT disk labeled **WINDOWS**. In Wanderer, look for the WINDOWS volume. If it is missing, open Prefs/Trident and check whether the USB mass-storage device is detected.
