@@ -14,10 +14,23 @@ jobs:
           msystem: UCRT64
           update: true
           install: base-devel autoconf automake libtool texinfo git curl wget unzip zip patch python mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-binutils mingw-w64-ucrt-x86_64-cmake mingw-w64-ucrt-x86_64-ninja
+      - name: Install Netpbm host utilities
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          cd "$(mktemp -d)"
+          curl -fsSL --retry 4 https://downloads.sourceforge.net/project/gnuwin32/netpbm/10.27/netpbm-10.27-bin.zip -o netpbm-bin.zip
+          curl -fsSL --retry 4 https://downloads.sourceforge.net/project/gnuwin32/netpbm/10.27/netpbm-10.27-dep.zip -o netpbm-dep.zip
+          printf '%s  %s\n' 747f3067bd77533b4b6da2c8e73a5ff4 netpbm-bin.zip 9ff1d619e241e4ee3558a850440b26c0 netpbm-dep.zip | md5sum -c
+          unzip -oq netpbm-bin.zip -d /tmp/aros-netpbm
+          unzip -oq netpbm-dep.zip -d /tmp/aros-netpbm
+          /tmp/aros-netpbm/bin/pngtopnm.exe -version
+          test -f /tmp/aros-netpbm/bin/ppmtoilbm.exe
       - name: Build upstream GNU tools for AROS x86-64
         shell: msys2 {0}
         run: |
           set -euo pipefail
+          export PATH="/tmp/aros-netpbm/bin:$PATH"
           mkdir -p logs
           cd /tmp
           git config --global core.autocrlf false
@@ -28,7 +41,7 @@ jobs:
           mkdir aros-build
           cd aros-build
           logdir="$(cygpath -u "$GITHUB_WORKSPACE")/logs"
-          command -v aclocal autoconf autoheader automake
+          command -v aclocal autoconf autoheader automake pngtopnm ppmtoilbm
           ../aros-src/configure --host=x86_64-w64-mingw32 --build=x86_64-w64-mingw32 --target=pc-x86_64 --with-toolchain=gnu 2>&1 | tee "$logdir/configure.log"
           make -j"$(nproc)" crosstools-toolchain 2>&1 | tee "$logdir/build.log"
       - name: Test Windows executable and package toolchain
