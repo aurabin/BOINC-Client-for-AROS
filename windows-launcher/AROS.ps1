@@ -66,36 +66,29 @@ function Get-OrInstallQemu {
 }
 
 function Assert-IsoImage([string]$Path) {
-    $image = [IO.File]::OpenRead($Path)
-    try {
-        $image.Position = 32769
-        $signature = New-Object byte[] 5
-        if ($image.Read($signature, 0, 5) -ne 5 -or
-            [Text.Encoding]::ASCII.GetString($signature) -ne 'CD001') {
-            throw "Die Datei hat keinen ISO-9660-Header: $Path"
-        }
-    } finally {
-        $image.Dispose()
-    }
+    $null = Get-IsoVolumeLabel $Path
 }
 
-function Get-IsoBootProfile([string]$Path) {
+function Get-IsoVolumeLabel([string]$Path) {
     $file = [IO.File]::OpenRead($Path)
     try {
         $descriptor = New-Object byte[] 2048
-        $label = ''
         for ($sector = 16; $sector -lt 48; $sector++) {
             $file.Position = $sector * 2048
             if ($file.Read($descriptor, 0, $descriptor.Length) -ne $descriptor.Length) { break }
             if ([Text.Encoding]::ASCII.GetString($descriptor, 1, 5) -ne 'CD001') { break }
+            if ($descriptor[6] -ne 1) { break }
             if ($descriptor[0] -eq 255) { break }
             if ($descriptor[0] -eq 1) {
-                $label = [Text.Encoding]::ASCII.GetString($descriptor, 40, 32).Trim([char]0, [char]32)
-                break
+                return [Text.Encoding]::ASCII.GetString($descriptor, 40, 32).Trim([char]0, [char]32)
             }
         }
     } finally { $file.Dispose() }
+    throw "Kein gueltiger primaerer ISO-9660-Volumendeskriptor: $Path"
+}
 
+function Get-IsoBootProfile([string]$Path) {
+    $label = Get-IsoVolumeLabel $Path
     $identity = "$label $([IO.Path]::GetFileNameWithoutExtension($Path))"
     $x64 = $identity -match '(?<![a-z0-9])(?:x86[-_ ]?64|amd64|64[-_ ]?bit|abiv11)(?![a-z0-9])'
     $x86 = $identity -match '(?<![a-z0-9])(?:i[3-6]86|32[-_ ]?bit|abiv0)(?![a-z0-9])'
@@ -379,7 +372,12 @@ function Save-ArosImage([string]$Release, [string]$Destination) {
         }
 
         Assert-IsoImage $imagePath
-        [IO.File]::Move($imagePath, $Destination)
+        if (Test-Path -LiteralPath $Destination -PathType Leaf) {
+            $backup = "$Destination.invalid-$([guid]::NewGuid().ToString('N'))"
+            [IO.File]::Replace($imagePath, $Destination, $backup)
+        } else {
+            [IO.File]::Move($imagePath, $Destination)
+        }
     } finally {
         Remove-Item -LiteralPath $archivePath, $imagePath, $stage -ErrorAction SilentlyContinue
     }
@@ -609,6 +607,9 @@ if ($hasSmpTopology) {
     }
     $smpArgument = [string]$SmpCpus
 }
+if (($ChooseDistribution -or $Distribution) -and ($Update -or $UpdateSettings -or $CleanupOnly -or $SetupOnly)) {
+    throw 'Ein Distributionsstart kann nicht mit einem Wartungsmodus kombiniert werden.'
+}
 if ($ChooseDistribution -and !$Distribution) {
     $Distribution = Select-ArosDistribution
     if (!$Distribution) { return }
@@ -729,19 +730,31 @@ try {
         if (!$Update -and !$SetupOnly -and !$PSBoundParameters.ContainsKey('AutoUpdate')) {
             $AutoUpdate = Get-AutoUpdatePreference $updatePreference
         }
-        $cached = @(
+        $cachedPaths = @{}
+        $null = @(
             Get-ChildItem -LiteralPath $data -File -Filter 'AROS-*.iso' |
                 ForEach-Object {
-                    if ($_.Length -gt 32774 -and $_.Name -match "^AROS-($releasePattern)\.iso$") {
-                        $Matches[1]
+                    if ($_.Name -match "^AROS-($releasePattern)\.iso$") {
+                        $release = $Matches[1]
+                        try {
+                            Assert-IsoImage $_.FullName
+                            $cachedPaths[$release] = $_.FullName
+                        } catch {
+                            Write-Warning "ISO im Cache nicht verwendbar: $($_.Exception.Message)"
+                        }
                     }
                 }
         )
         $legacy = Join-Path $data 'AROS-x86-64.iso'
-        if ((Test-Path -LiteralPath $legacy -PathType Leaf) -and
-            (Get-Item -LiteralPath $legacy).Length -gt 32774) {
-            $cached += $baseline
+        if (!$cachedPaths.ContainsKey($baseline) -and (Test-Path -LiteralPath $legacy -PathType Leaf)) {
+            try {
+                Assert-IsoImage $legacy
+                $cachedPaths[$baseline] = $legacy
+            } catch {
+                Write-Warning "ISO im Cache nicht verwendbar: $($_.Exception.Message)"
+            }
         }
+        $cached = @($cachedPaths.Keys)
         $installed = @((Get-ReleaseOrder $cached))[0]
         $target = $installed
         if ($Update -or $AutoUpdate -or !$installed) {
@@ -766,17 +779,16 @@ try {
 
         if ($cached -notcontains $target) {
             try {
-                Save-ArosImage $target (Join-Path $data "AROS-$target.iso")
+                $destination = Join-Path $data "AROS-$target.iso"
+                Save-ArosImage $target $destination
+                $cachedPaths[$target] = $destination
             } catch {
                 if (!$AutoUpdate -or $Update -or !$installed) { throw }
                 Write-Warning "Update auf AROS $target fehlgeschlagen. Starte AROS $installed."
                 $target = $installed
             }
         }
-        $iso = Join-Path $data "AROS-$target.iso"
-        if ($target -eq $baseline -and $cached -contains $baseline -and !(Test-Path -LiteralPath $iso)) {
-            $iso = $legacy
-        }
+        $iso = $cachedPaths[$target]
         if ($Update) {
             Write-Host "AROS $target ist lokal verfuegbar."
             return
