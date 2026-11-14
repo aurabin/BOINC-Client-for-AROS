@@ -13,7 +13,7 @@ jobs:
         with:
           msystem: UCRT64
           update: true
-          install: base-devel git curl wget unzip zip patch python mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-binutils mingw-w64-ucrt-x86_64-cmake mingw-w64-ucrt-x86_64-ninja
+          install: base-devel autoconf automake libtool texinfo git curl wget unzip zip patch python mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-binutils mingw-w64-ucrt-x86_64-cmake mingw-w64-ucrt-x86_64-ninja
       - name: Build upstream GNU tools for AROS x86-64
         shell: msys2 {0}
         run: |
@@ -28,6 +28,7 @@ jobs:
           mkdir aros-build
           cd aros-build
           logdir="$(cygpath -u "$GITHUB_WORKSPACE")/logs"
+          command -v aclocal autoconf autoheader automake
           ../aros-src/configure --host=x86_64-w64-mingw32 --build=x86_64-w64-mingw32 --target=pc-x86_64 --with-toolchain=gnu 2>&1 | tee "$logdir/configure.log"
           make -j"$(nproc)" crosstools-toolchain 2>&1 | tee "$logdir/build.log"
       - name: Test Windows executable and package toolchain
