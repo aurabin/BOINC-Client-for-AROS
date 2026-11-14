@@ -38,6 +38,21 @@ function Find-Qemu {
     }
 }
 
+function Get-OrInstallQemu {
+    $qemu = Find-Qemu
+    if (!$qemu) {
+        if ($useOfflineIso) { throw 'Fuer den Offline-Start muss QEMU bereits installiert sein.' }
+        Write-Host 'QEMU fehlt. Windows Paket-Manager startet die Installation.'
+        if (!(Get-Command winget.exe -ErrorAction SilentlyContinue)) {
+            throw 'WinGet fehlt. Installiere QEMU von https://www.qemu.org/download/ und starte erneut.'
+        }
+        & winget.exe install --exact --id SoftwareFreedomConservancy.QEMU --source winget | Out-Host
+        $qemu = Find-Qemu
+        if (!$qemu) { throw 'QEMU wurde nicht gefunden. Schliesse dieses Fenster und starte erneut.' }
+    }
+    return $qemu
+}
+
 function Assert-IsoImage([string]$Path) {
     $image = [IO.File]::OpenRead($Path)
     try {
@@ -395,6 +410,7 @@ if ($WritableShare -and !$ShareWindowsFiles) {
     throw '-WritableShare benoetigt -ShareWindowsFiles.'
 }
 
+$iso = $null
 $useOfflineIso = $OfflineIso -or $PSBoundParameters.ContainsKey('IsoPath')
 if ($useOfflineIso -and $Update) {
     throw 'Eine lokale ISO kann nicht gleichzeitig mit -Update gestartet werden.'
@@ -443,7 +459,41 @@ try {
 }
 
 try {
-    if (!$useOfflineIso) {
+    $qemu = $null
+    $configuration = $null
+    $bootOrder = 'd'
+    $virtualDriveArgs = @()
+    if ($VirtualDrives) {
+        $qemu = Get-OrInstallQemu
+        $imageTool = Join-Path (Split-Path -Parent $qemu) 'qemu-img.exe'
+        if (!(Test-Path -LiteralPath $imageTool -PathType Leaf)) { throw 'qemu-img.exe fehlt.' }
+        $images = @((Join-Path $data 'DH0.qcow2'), (Join-Path $data 'DH1.qcow2'))
+        $driveSettings = Join-Path $data 'virtual-drive-paths.json'
+        if (Test-Path -LiteralPath $driveSettings -PathType Leaf) {
+            try {
+                $savedPaths = @(Get-Content -LiteralPath $driveSettings -Raw | ConvertFrom-Json)
+                if ($savedPaths.Count -eq 2 -and $savedPaths[0] -is [string] -and $savedPaths[1] -is [string]) {
+                    $images = $savedPaths
+                }
+            } catch {
+                Write-Warning 'Gespeicherte Laufwerkspfade konnten nicht gelesen werden.'
+            }
+        }
+        $configuration = Select-VirtualDrives $imageTool $images
+        if (!$configuration) { return }
+        $images = $configuration.Paths
+        if (!$configuration.DisableDH1 -and $images[0] -ieq $images[1]) {
+            throw 'DH0 und DH1 brauchen unterschiedliche Image-Dateien.'
+        }
+        if ($configuration.BootDH0) {
+            if (!(Test-Path -LiteralPath $images[0] -PathType Leaf)) {
+                throw 'DH0 ist noch nicht vorhanden. Starte zuerst von der ISO und installiere AROS.'
+            }
+            $bootOrder = 'c'
+        }
+    }
+
+    if (!$useOfflineIso -and $bootOrder -eq 'd') {
         $cached = @(
             Get-ChildItem -LiteralPath $data -File -Filter 'AROS-*.iso' |
                 ForEach-Object {
@@ -487,42 +537,9 @@ try {
         }
     }
 
-    $qemu = Find-Qemu
-    if (!$qemu) {
-        if ($useOfflineIso) { throw 'Fuer den Offline-Start muss QEMU bereits installiert sein.' }
-        Write-Host 'QEMU fehlt. Windows Paket-Manager startet die Installation.'
-        if (!(Get-Command winget.exe -ErrorAction SilentlyContinue)) {
-            throw 'WinGet fehlt. Installiere QEMU von https://www.qemu.org/download/ und starte erneut.'
-        }
-        & winget.exe install --exact --id SoftwareFreedomConservancy.QEMU --source winget
-        $qemu = Find-Qemu
-        if (!$qemu) { throw 'QEMU wurde nicht gefunden. Schliesse dieses Fenster und starte erneut.' }
-    }
+    if (!$qemu) { $qemu = Get-OrInstallQemu }
     if ($SetupOnly) { return }
-    $bootOrder = 'd'
-    $virtualDriveArgs = @()
-    if ($VirtualDrives) {
-        $imageTool = Join-Path (Split-Path -Parent $qemu) 'qemu-img.exe'
-        if (!(Test-Path -LiteralPath $imageTool -PathType Leaf)) { throw 'qemu-img.exe fehlt.' }
-        $images = @((Join-Path $data 'DH0.qcow2'), (Join-Path $data 'DH1.qcow2'))
-        $driveSettings = Join-Path $data 'virtual-drive-paths.json'
-        if (Test-Path -LiteralPath $driveSettings -PathType Leaf) {
-            try {
-                $savedPaths = @(Get-Content -LiteralPath $driveSettings -Raw | ConvertFrom-Json)
-                if ($savedPaths.Count -eq 2 -and $savedPaths[0] -is [string] -and $savedPaths[1] -is [string]) {
-                    $images = $savedPaths
-                }
-            } catch {
-                Write-Warning 'Gespeicherte Laufwerkspfade konnten nicht gelesen werden.'
-            }
-        }
-        $configuration = Select-VirtualDrives $imageTool $images
-        if (!$configuration) { return }
-        $images = $configuration.Paths
-        if (!$configuration.DisableDH1 -and $images[0] -ieq $images[1]) {
-            throw 'DH0 und DH1 brauchen unterschiedliche Image-Dateien.'
-        }
-        if ($configuration.BootDH0) { $bootOrder = 'c' }
+    if ($configuration) {
         $count = if ($configuration.DisableDH1) { 1 } else { 2 }
         for ($i = 0; $i -lt $count; $i++) {
             Set-DriveImage $imageTool $images[$i] $configuration.Sizes[$i]
@@ -554,7 +571,8 @@ try {
     if ($forwarding.Count) {
         $network = 'user,model=rtl8139,restrict=on,' + ($forwarding -join ',')
     }
-    $qemuArgs = @('-m', '1024', '-boot', $bootOrder, '-cdrom', $iso, '-nic', $network) + $virtualDriveArgs
+    $qemuArgs = @('-m', '1024', '-boot', $bootOrder, '-nic', $network) + $virtualDriveArgs
+    if ($iso) { $qemuArgs += @('-cdrom', $iso) }
     if ($WandererFullscreen) {
         $sessionId = [guid]::NewGuid().ToString('N')
         $windowName = "AROS-Wizard-$sessionId"

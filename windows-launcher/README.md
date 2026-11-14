@@ -20,7 +20,7 @@ Open **AROS-Laufwerke.cmd** (or run the EXE with `--virtual-drives`) for the DH0
 
 For initial setup, boot the ISO and use AROS HDToolBox and Format to create and format partitions on the virtual IDE disks. The labels in the dialog identify disk slots. Name the corresponding AROS partitions DH0 and DH1 in AROS. Increasing the image size adds unallocated capacity, so existing partitions retain their size until you expand or recreate them in AROS. After installing AROS on the first disk, select **Von DH0 starten statt von der ISO** to boot that disk.
 
-Use `AROS-Laufwerke.cmd -OfflineIso` to select a local boot ISO.
+Use `AROS-Laufwerke.cmd -OfflineIso` to select a local boot ISO. With an existing bootable DH0 image, `AROS-Laufwerke.cmd` and the DH0 boot option start directly from disk without downloading or attaching an ISO.
 
 ## Windows file exchange
 
