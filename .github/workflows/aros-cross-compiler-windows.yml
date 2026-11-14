@@ -18,7 +18,9 @@ jobs:
         shell: msys2 {0}
         run: |
           set -euo pipefail
-          cd "$(mktemp -d)"
+          download_dir="$(mktemp -d)"
+          cd "$download_dir"
+          trap 'cd /tmp && rm -f -- "$download_dir/netpbm-bin.zip" "$download_dir/netpbm-dep.zip" && rmdir -- "$download_dir"' EXIT
           curl -fsSL --retry 4 https://downloads.sourceforge.net/project/gnuwin32/netpbm/10.27/netpbm-10.27-bin.zip -o netpbm-bin.zip
           curl -fsSL --retry 4 https://downloads.sourceforge.net/project/gnuwin32/netpbm/10.27/netpbm-10.27-dep.zip -o netpbm-dep.zip
           printf '%s  %s\n' 747f3067bd77533b4b6da2c8e73a5ff4 netpbm-bin.zip 9ff1d619e241e4ee3558a850440b26c0 netpbm-dep.zip | md5sum -c
