@@ -8,7 +8,8 @@ param(
     [switch]$OfflineIso,
     [string]$IsoPath,
     [switch]$ChatGPT,
-    [switch]$WandererFullscreen
+    [switch]$WandererFullscreen,
+    [switch]$VirtualDrives
 )
 
 $ErrorActionPreference = 'Stop'
@@ -48,6 +49,149 @@ function Assert-IsoImage([string]$Path) {
         }
     } finally {
         $image.Dispose()
+    }
+}
+
+function Get-DriveSizeMiB([string]$ImageTool, [string]$Path) {
+    if (!(Test-Path -LiteralPath $Path -PathType Leaf)) { return 0 }
+    $info = & $ImageTool info --output=json -f qcow2 $Path
+    if ($LASTEXITCODE -ne 0) { throw "Image konnte nicht gelesen werden: $Path" }
+    $bytes = (($info -join "`n") | ConvertFrom-Json).'virtual-size'
+    if ($bytes -lt 1MB -or ($bytes % 1MB) -ne 0) {
+        throw "Image hat keine unterstuetzte Groesse in ganzen MiB: $Path"
+    }
+    return [long]($bytes / 1MB)
+}
+
+function Set-DriveImage([string]$ImageTool, [string]$Path, [long]$SizeMiB) {
+    $current = Get-DriveSizeMiB $ImageTool $Path
+    if ($current -gt $SizeMiB) { throw "Ein vorhandenes Image kann nicht verkleinert werden: $Path" }
+    if ($current -eq $SizeMiB) { return }
+    $size = "${SizeMiB}M"
+    if ($current) {
+        & $ImageTool resize -f qcow2 $Path $size | Out-Host
+        if ($LASTEXITCODE -ne 0) { throw "Image konnte nicht vergroessert werden: $Path" }
+        return
+    }
+    $temporary = $Path + '.' + [guid]::NewGuid().ToString('N') + '.tmp'
+    try {
+        & $ImageTool create -f qcow2 $temporary $size | Out-Host
+        if ($LASTEXITCODE -ne 0) { throw "Image konnte nicht erstellt werden: $Path" }
+        [IO.File]::Move($temporary, $Path)
+    } finally {
+        Remove-Item -LiteralPath $temporary -ErrorAction SilentlyContinue
+    }
+}
+
+function Select-VirtualDrives([string]$ImageTool, [string[]]$Paths) {
+    Add-Type -AssemblyName System.Windows.Forms
+    Add-Type -AssemblyName System.Drawing
+    $readSize = ${function:Get-DriveSizeMiB}
+    $sizes = @(foreach ($path in $Paths) {
+        try { Get-DriveSizeMiB $ImageTool $path } catch { 0 }
+    })
+    $form = New-Object Windows.Forms.Form
+    try {
+        $form.Text = 'AROS Wizard - Virtuelle Laufwerke'
+        $form.ClientSize = [Drawing.Size]::new(665, 258)
+        $form.StartPosition = 'CenterScreen'
+        $form.FormBorderStyle = 'FixedDialog'
+        $form.MaximizeBox = $false
+        $form.MinimizeBox = $false
+        $form.AutoScaleMode = 'Font'
+        $fields = @()
+        $pathFields = @()
+        $browseButtons = @()
+        for ($i = 0; $i -lt 2; $i++) {
+            $y = 16 + ($i * 67)
+            $label = New-Object Windows.Forms.Label
+            $label.Text = "DH${i} - Image-Groesse (MiB)"
+            $label.AutoSize = $true
+            $label.Location = [Drawing.Point]::new(20, $y + 3)
+            $size = New-Object Windows.Forms.NumericUpDown
+            $size.Location = [Drawing.Point]::new(220, $y)
+            $size.Width = 105
+            $size.Minimum = [Math]::Max(1, $sizes[$i])
+            $size.Maximum = [Math]::Max(2097152, $sizes[$i])
+            $default = if ($i -eq 0) { 4096 } else { 2048 }
+            $size.Value = if ($sizes[$i]) { $sizes[$i] } else { $default }
+            $pathField = New-Object Windows.Forms.TextBox
+            $pathField.Location = [Drawing.Point]::new(20, $y + 28)
+            $pathField.Width = 525
+            $pathField.ReadOnly = $true
+            $pathField.Text = $Paths[$i]
+            $browse = New-Object Windows.Forms.Button
+            $browse.Text = 'Image waehlen'
+            $browse.Location = [Drawing.Point]::new(553, $y + 27)
+            $browse.Width = 92
+            $browse.Add_Click({
+                $picker = New-Object Windows.Forms.SaveFileDialog
+                try {
+                    $picker.Title = 'Vorhandenes oder neues QCOW2-Image waehlen'
+                    $picker.Filter = 'QCOW2-Images (*.qcow2)|*.qcow2'
+                    $picker.DefaultExt = 'qcow2'
+                    $picker.OverwritePrompt = $false
+                    $picker.InitialDirectory = [IO.Path]::GetDirectoryName($pathField.Text)
+                    $picker.FileName = [IO.Path]::GetFileName($pathField.Text)
+                    if ($picker.ShowDialog($form) -ne [Windows.Forms.DialogResult]::OK) { return }
+                    $selected = $picker.FileName
+                    if ([IO.Path]::GetExtension($selected) -ine '.qcow2') {
+                        throw 'Bitte ein Image mit der Dateiendung .qcow2 waehlen.'
+                    }
+                    $existing = & $readSize $ImageTool $selected
+                    $size.Minimum = [Math]::Max(1, $existing)
+                    $size.Maximum = [Math]::Max(2097152, $existing)
+                    $size.Value = if ($existing) { $existing } else { $default }
+                    $pathField.Text = $selected
+                } catch {
+                    [void][Windows.Forms.MessageBox]::Show($form, $_.Exception.Message, 'AROS Wizard')
+                } finally {
+                    $picker.Dispose()
+                }
+            }.GetNewClosure())
+            $fields += $size
+            $pathFields += $pathField
+            $browseButtons += $browse
+            $form.Controls.AddRange(@($label, $size, $pathField, $browse))
+        }
+        $disable = New-Object Windows.Forms.CheckBox
+        $disable.Text = 'DH1 deaktivieren'
+        $disable.AutoSize = $true
+        $disable.Location = [Drawing.Point]::new(345, 85)
+        $disable.Add_CheckedChanged({
+            $fields[1].Enabled = !$disable.Checked
+            $pathFields[1].Enabled = !$disable.Checked
+            $browseButtons[1].Enabled = !$disable.Checked
+        }.GetNewClosure())
+        $boot = New-Object Windows.Forms.CheckBox
+        $boot.Text = 'Von DH0 starten statt von der ISO'
+        $boot.AutoSize = $true
+        $boot.Location = [Drawing.Point]::new(20, 152)
+        $hint = New-Object Windows.Forms.Label
+        $hint.Text = 'Neue Images zuerst in AROS partitionieren und formatieren.'
+        $hint.AutoSize = $true
+        $hint.Location = [Drawing.Point]::new(20, 187)
+        $start = New-Object Windows.Forms.Button
+        $start.Text = 'Starten'
+        $start.Location = [Drawing.Point]::new(475, 219)
+        $start.DialogResult = 'OK'
+        $cancel = New-Object Windows.Forms.Button
+        $cancel.Text = 'Abbrechen'
+        $cancel.Location = [Drawing.Point]::new(570, 219)
+        $cancel.DialogResult = 'Cancel'
+        $form.Controls.AddRange(@($disable, $boot, $hint, $start, $cancel))
+        $form.AcceptButton = $start
+        $form.CancelButton = $cancel
+        if ($form.ShowDialog() -eq [Windows.Forms.DialogResult]::OK) {
+            return @{
+                Sizes = @([long]$fields[0].Value, [long]$fields[1].Value)
+                Paths = @($pathFields[0].Text, $pathFields[1].Text)
+                DisableDH1 = $disable.Checked
+                BootDH0 = $boot.Checked
+            }
+        }
+    } finally {
+        $form.Dispose()
     }
 }
 
@@ -175,6 +319,9 @@ $chatBridge = {
     }
 }
 
+if ($VirtualDrives -and ($Update -or $SetupOnly)) {
+    throw '-VirtualDrives benoetigt einen normalen VM-Start.'
+}
 if ($WandererFullscreen -and ($Update -or $SetupOnly)) {
     throw '-WandererFullscreen benoetigt einen normalen VM-Start.'
 }
@@ -352,6 +499,38 @@ try {
         if (!$qemu) { throw 'QEMU wurde nicht gefunden. Schliesse dieses Fenster und starte erneut.' }
     }
     if ($SetupOnly) { return }
+    $bootOrder = 'd'
+    $virtualDriveArgs = @()
+    if ($VirtualDrives) {
+        $imageTool = Join-Path (Split-Path -Parent $qemu) 'qemu-img.exe'
+        if (!(Test-Path -LiteralPath $imageTool -PathType Leaf)) { throw 'qemu-img.exe fehlt.' }
+        $images = @((Join-Path $data 'DH0.qcow2'), (Join-Path $data 'DH1.qcow2'))
+        $driveSettings = Join-Path $data 'virtual-drive-paths.json'
+        if (Test-Path -LiteralPath $driveSettings -PathType Leaf) {
+            try {
+                $savedPaths = @(Get-Content -LiteralPath $driveSettings -Raw | ConvertFrom-Json)
+                if ($savedPaths.Count -eq 2 -and $savedPaths[0] -is [string] -and $savedPaths[1] -is [string]) {
+                    $images = $savedPaths
+                }
+            } catch {
+                Write-Warning 'Gespeicherte Laufwerkspfade konnten nicht gelesen werden.'
+            }
+        }
+        $configuration = Select-VirtualDrives $imageTool $images
+        if (!$configuration) { return }
+        $images = $configuration.Paths
+        if (!$configuration.DisableDH1 -and $images[0] -ieq $images[1]) {
+            throw 'DH0 und DH1 brauchen unterschiedliche Image-Dateien.'
+        }
+        if ($configuration.BootDH0) { $bootOrder = 'c' }
+        $count = if ($configuration.DisableDH1) { 1 } else { 2 }
+        for ($i = 0; $i -lt $count; $i++) {
+            Set-DriveImage $imageTool $images[$i] $configuration.Sizes[$i]
+            $escapedImage = $images[$i].Replace(',', ',,')
+            $virtualDriveArgs += @('-drive', "file=$escapedImage,format=qcow2,if=ide,index=$i")
+        }
+        ConvertTo-Json -InputObject $images | Set-Content -LiteralPath $driveSettings -Encoding UTF8
+    }
 
     $forwarding = @()
     if ($WindowsDesktop) {
@@ -375,7 +554,7 @@ try {
     if ($forwarding.Count) {
         $network = 'user,model=rtl8139,restrict=on,' + ($forwarding -join ',')
     }
-    $qemuArgs = @('-m', '1024', '-boot', 'd', '-cdrom', $iso, '-nic', $network)
+    $qemuArgs = @('-m', '1024', '-boot', $bootOrder, '-cdrom', $iso, '-nic', $network) + $virtualDriveArgs
     if ($WandererFullscreen) {
         $sessionId = [guid]::NewGuid().ToString('N')
         $windowName = "AROS-Wizard-$sessionId"

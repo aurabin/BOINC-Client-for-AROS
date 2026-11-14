@@ -14,6 +14,14 @@ Double-click **AROS-Offline-ISO.cmd** and select a local bootable AROS x86-64 IS
 
 To pass a path directly, run `AROS-starten.cmd -IsoPath "D:\Images\AROS.iso"`. To select an ISO and use Windows desktop mode in the same session, run `AROS-Offline-ISO.cmd -WindowsDesktop`.
 
+## Virtual AROS drives
+
+Open **AROS-Laufwerke.cmd** (or run the EXE with `--virtual-drives`) for the DH0 and DH1 image dialog. Use **Image waehlen** to select an existing QCOW2 image or enter the path for a new one. The Wizard remembers each path after a successful setup. Choose the capacity of each dynamically allocated image in MiB. Existing images can be grown. **DH1 deaktivieren** omits the second disk for that session and preserves its image.
+
+For initial setup, boot the ISO and use AROS HDToolBox and Format to create and format partitions on the virtual IDE disks. The labels in the dialog identify disk slots. Name the corresponding AROS partitions DH0 and DH1 in AROS. Increasing the image size adds unallocated capacity, so existing partitions retain their size until you expand or recreate them in AROS. After installing AROS on the first disk, select **Von DH0 starten statt von der ISO** to boot that disk.
+
+Use `AROS-Laufwerke.cmd -OfflineIso` to select a local boot ISO.
+
 ## Windows file exchange
 
 Start **AROS-Dateiaustausch.cmd** once to create the AROS-Austausch folder beside the launcher. Close QEMU, copy the files you want to share into that folder, then start the same launcher again. QEMU presents the folder to AROS as a virtual USB FAT disk labeled **WINDOWS**. In Wanderer, look for the WINDOWS volume. If it is missing, open Prefs/Trident and check whether the USB mass-storage device is detected.
