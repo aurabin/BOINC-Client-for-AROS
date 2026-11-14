@@ -9,7 +9,8 @@ param(
     [string]$IsoPath,
     [switch]$ChatGPT,
     [switch]$WandererFullscreen,
-    [switch]$VirtualDrives
+    [switch]$VirtualDrives,
+    [ValidateRange(1, 255)][int]$SmpCpus = 1
 )
 
 $ErrorActionPreference = 'Stop'
@@ -411,7 +412,10 @@ if ($WritableShare -and !$ShareWindowsFiles) {
 }
 
 $iso = $null
-$useOfflineIso = $OfflineIso -or $PSBoundParameters.ContainsKey('IsoPath')
+$useOfflineIso = $OfflineIso -or $PSBoundParameters.ContainsKey('IsoPath') -or $SmpCpus -gt 1
+if ($SmpCpus -gt 1 -and $SetupOnly) {
+    throw '-SmpCpus benoetigt einen normalen VM-Start.'
+}
 if ($useOfflineIso -and $Update) {
     throw 'Eine lokale ISO kann nicht gleichzeitig mit -Update gestartet werden.'
 }
@@ -572,6 +576,7 @@ try {
         $network = 'user,model=rtl8139,restrict=on,' + ($forwarding -join ',')
     }
     $qemuArgs = @('-m', '1024', '-boot', $bootOrder, '-nic', $network) + $virtualDriveArgs
+    if ($SmpCpus -gt 1) { $qemuArgs += @('-smp', [string]$SmpCpus) }
     if ($iso) { $qemuArgs += @('-cdrom', $iso) }
     if ($WandererFullscreen) {
         $sessionId = [guid]::NewGuid().ToString('N')

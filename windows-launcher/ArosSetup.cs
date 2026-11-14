@@ -31,12 +31,13 @@ internal static class ArosSetup
                 case "--offline-iso": options += " -OfflineIso"; break;
                 case "--chatgpt": options += " -ChatGPT"; break;
                 case "--virtual-drives": options += " -VirtualDrives"; break;
+                case "--smp": options += " -SmpCpus 4"; break;
                 case "--wanderer-fullscreen": options += " -WandererFullscreen"; break;
                 case "--windows-desktop": options += " -WindowsDesktop"; break;
                 case "--share": options += " -ShareWindowsFiles"; shareWindowsFiles = true; break;
                 case "--share-write": writableShare = true; break;
                 default:
-                    Console.Error.WriteLine("Usage: AROS-Setup-x64.exe [--update | --offline-iso | --share | --share-write | --windows-desktop | --chatgpt | --wanderer-fullscreen | --virtual-drives]");
+                    Console.Error.WriteLine("Usage: AROS-Setup-x64.exe [--update | --offline-iso | --share | --share-write | --windows-desktop | --chatgpt | --wanderer-fullscreen | --virtual-drives | --smp]");
                     return 2;
             }
         }

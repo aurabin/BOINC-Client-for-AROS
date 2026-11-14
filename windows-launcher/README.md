@@ -22,6 +22,12 @@ For initial setup, boot the ISO and use AROS HDToolBox and Format to create and 
 
 Use `AROS-Laufwerke.cmd -OfflineIso` to select a local boot ISO. With an existing bootable DH0 image, `AROS-Laufwerke.cmd` and the DH0 boot option start directly from disk without downloading or attaching an ISO.
 
+## Experimental SMP guest
+
+Open **AROS-SMP.cmd** or run the EXE with `--smp` and select an x86-64 PC SMP boot ISO from the AROS Development Team. The Wizard exposes four virtual CPUs. For a different count, run `AROS-starten.cmd -SmpCpus 2 -IsoPath "D:\Images\AROS-SMP.iso"`. If no path is supplied, the launcher opens the ISO picker.
+
+The option supplies virtual CPUs to QEMU. The guest kernel in the chosen ISO must support SMP. The stable cached ABIv11 image is used by the normal one-CPU launch. Use separate images for experimental guest installs.
+
 ## Windows file exchange
 
 Start **AROS-Dateiaustausch.cmd** once to create the AROS-Austausch folder beside the launcher. Close QEMU, copy the files you want to share into that folder, then start the same launcher again. QEMU presents the folder to AROS as a virtual USB FAT disk labeled **WINDOWS**. In Wanderer, look for the WINDOWS volume. If it is missing, open Prefs/Trident and check whether the USB mass-storage device is detected.
