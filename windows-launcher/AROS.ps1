@@ -8,7 +8,7 @@ param(
     [switch]$OfflineIso,
     [string]$IsoPath,
     [switch]$ChatGPT,
-    [switch]$Fullscreen
+    [switch]$WandererFullscreen
 )
 
 $ErrorActionPreference = 'Stop'
@@ -175,6 +175,68 @@ $chatBridge = {
     }
 }
 
+if ($WandererFullscreen -and ($Update -or $SetupOnly)) {
+    throw '-WandererFullscreen benoetigt einen normalen VM-Start.'
+}
+
+$fullscreenBridge = {
+    param([string]$ReadyPath, [string]$WindowName)
+    $ErrorActionPreference = 'Stop'
+    Add-Type -AssemblyName System.Windows.Forms
+    Add-Type @'
+using System;
+using System.Text;
+using System.Diagnostics;
+using System.Runtime.InteropServices;
+
+public static class WizardWindow {
+    [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr window, out uint pid);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern int GetWindowText(IntPtr window, StringBuilder text, int capacity);
+    public static bool IsForegroundQemu(string marker) {
+        IntPtr window = GetForegroundWindow();
+        if (window == IntPtr.Zero) return false;
+        StringBuilder title = new StringBuilder(256);
+        GetWindowText(window, title, title.Capacity);
+        if (title.ToString().IndexOf(marker, StringComparison.Ordinal) < 0) return false;
+        uint pid;
+        GetWindowThreadProcessId(window, out pid);
+        if (pid == 0) return false;
+        try {
+            using (Process process = Process.GetProcessById((int)pid))
+                return process.ProcessName.Equals("qemu-system-x86_64", StringComparison.OrdinalIgnoreCase);
+        } catch (ArgumentException) { return false; }
+    }
+}
+'@
+
+    $listener = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, 0)
+    $client = $null
+    try {
+        $listener.Start()
+        [IO.File]::WriteAllText($ReadyPath, [string]$listener.LocalEndpoint.Port)
+        $client = $listener.AcceptTcpClient()
+        $listener.Stop()
+        $stream = $client.GetStream()
+        $line = [Text.StringBuilder]::new()
+        while (($byte = $stream.ReadByte()) -ge 0) {
+            if ($byte -eq 10) {
+                if ($line.ToString().TrimEnd([char]13) -ceq 'AROS-WIZARD-FULLSCREEN-1' -and
+                    [WizardWindow]::IsForegroundQemu($WindowName)) {
+                    [Windows.Forms.SendKeys]::SendWait('^%f')
+                }
+                [void]$line.Clear()
+            } elseif ($line.Length -lt 80) {
+                [void]$line.Append([char]$byte)
+            }
+        }
+    } finally {
+        if ($client) { $client.Dispose() }
+        $listener.Stop()
+    }
+}
+
 if ($ChatGPT -and ($Update -or $SetupOnly)) {
     throw '-ChatGPT benoetigt einen normalen VM-Start.'
 }
@@ -314,7 +376,22 @@ try {
         $network = 'user,model=rtl8139,restrict=on,' + ($forwarding -join ',')
     }
     $qemuArgs = @('-m', '1024', '-boot', 'd', '-cdrom', $iso, '-nic', $network)
-    if ($Fullscreen) { $qemuArgs += '-full-screen' }
+    if ($WandererFullscreen) {
+        $sessionId = [guid]::NewGuid().ToString('N')
+        $windowName = "AROS-Wizard-$sessionId"
+        $fullscreenReady = Join-Path $data "$sessionId.fullscreen-port"
+        $fullscreenJob = Start-Job -ScriptBlock $fullscreenBridge -ArgumentList $fullscreenReady, $windowName
+        $deadline = [DateTime]::UtcNow.AddSeconds(15)
+        do {
+            Start-Sleep -Milliseconds 150
+            $fullscreenPort = Get-Content -LiteralPath $fullscreenReady -ErrorAction SilentlyContinue
+        } until ($fullscreenPort -match '^[0-9]+$' -or
+            $fullscreenJob.State -in 'Completed', 'Failed', 'Stopped' -or [DateTime]::UtcNow -ge $deadline)
+        if ($fullscreenPort -notmatch '^[0-9]+$') {
+            throw 'Der Windows-Vollbildkanal konnte nicht gestartet werden.'
+        }
+        $qemuArgs += @('-display', 'gtk', '-name', $windowName, '-serial', "tcp:127.0.0.1:$fullscreenPort")
+    }
     if ($ShareWindowsFiles) {
         $share = Join-Path $root 'AROS-Austausch'
         New-Item -ItemType Directory -Force -Path $share | Out-Null
@@ -338,6 +415,8 @@ try {
 } finally {
     if ($chatJob) { Remove-Job -Job $chatJob -Force }
     if ($chatReady) { Remove-Item -LiteralPath $chatReady -ErrorAction SilentlyContinue }
+    if ($fullscreenJob) { Remove-Job -Job $fullscreenJob -Force }
+    if ($fullscreenReady) { Remove-Item -LiteralPath $fullscreenReady -ErrorAction SilentlyContinue }
     $lock.Dispose()
 }
 

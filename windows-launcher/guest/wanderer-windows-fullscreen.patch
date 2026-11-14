@@ -1,0 +1,89 @@
+diff --git a/workbench/system/Wanderer/wanderer.c b/workbench/system/Wanderer/wanderer.c
+index 484193e..4532028 100644
+--- a/workbench/system/Wanderer/wanderer.c
++++ b/workbench/system/Wanderer/wanderer.c
+@@ -18,6 +18,9 @@
+ #include <zune/customclasses.h>
+ 
+ #include <dos/notify.h>
++#include <dos/var.h>
++#include <devices/serial.h>
++#include <proto/exec.h>
+ 
+ #include <workbench/handler.h>
+ 
+@@ -2933,6 +2936,31 @@ VOID DoMenuNotify(Object* strip, int id, IPTR trigattrib, void *function, void *
+ }
+ ///
+ 
++/* Only the Windows Wizard image enables this menu in its startup sequence. */
++#define MEN_WIZARD_FULLSCREEN 0x575A4653
++static void wizard_toggle_fullscreen(void)
++{
++    static const char command[] = "AROS-WIZARD-FULLSCREEN-1\n";
++    struct MsgPort *port = CreateMsgPort();
++    struct IOExtSer *io;
++    if (!port) return;
++    io = (struct IOExtSer *)CreateIORequest(port, sizeof(*io));
++    if (io)
++    {
++        io->io_SerFlags = SERF_XDISABLED;
++        if (OpenDevice(SERIALNAME, 0, (struct IORequest *)io, 0) == 0)
++        {
++            io->IOSer.io_Command = CMD_WRITE;
++            io->IOSer.io_Data = (APTR)command;
++            io->IOSer.io_Length = sizeof(command) - 1;
++            DoIO((struct IORequest *)io);
++            CloseDevice((struct IORequest *)io);
++        }
++        DeleteIORequest((struct IORequest *)io);
++    }
++    DeleteMsgPort(port);
++}
++
+ ///SetMenuDefaultNotifies()
+ VOID SetMenuDefaultNotifies(Object *wanderer, Object *strip, STRPTR path)
+ {
+@@ -2940,6 +2968,8 @@ VOID SetMenuDefaultNotifies(Object *wanderer, Object *strip, STRPTR path)
+ 
+     if (!strip) return;
+ 
++    DoMenuNotify(strip, MEN_WIZARD_FULLSCREEN, MUIA_Menuitem_Trigger,
++                                wizard_toggle_fullscreen, NULL);
+     DoMenuNotify(strip, MEN_WANDERER_EXECUTE, MUIA_Menuitem_Trigger,
+                                 wanderer_menufunc_wanderer_execute, path);
+     DoMenuNotify(strip, MEN_WANDERER_SHELL, MUIA_Menuitem_Trigger,
+@@ -3811,11 +3841,15 @@ Object * Wanderer__Func_CreateWandererIntuitionMenu( BOOL isRoot, BOOL isBackdro
+ 
+     if ( isRoot )
+     {
++        char wizard[8];
++        BOOL wizardWindows = GetVar("AROSWizardWindows", wizard, sizeof(wizard), GVF_GLOBAL_ONLY) == 1
++                             && wizard[0] == '1';
+         struct NewMenu nm[] = {
+             {NM_TITLE,          _(MSG_MEN_WANDERER) },
+                 {NM_ITEM,       _(MSG_MEN_BACKDROP),    _(MSG_MEN_SC_BACKDROP)  , _NewWandIntMenu__OPTION_BACKDROP      , 0, (APTR) MEN_WANDERER_BACKDROP },
+                 {NM_ITEM,       _(MSG_MEN_EXECUTE),     _(MSG_MEN_SC_EXECUTE)   , 0                                     , 0, (APTR) MEN_WANDERER_EXECUTE },
+                 {NM_ITEM,       _(MSG_MEN_SHELL),       _(MSG_MEN_SC_SHELL)     , 0                                     , 0, (APTR) MEN_WANDERER_SHELL },
++                {NM_ITEM,       "Fullscreen",          NULL                    , 0                                     , 0, (APTR) MEN_WIZARD_FULLSCREEN },
+                 {NM_ITEM,       "AROS" },
+                     {NM_SUB,    _(MSG_MEN_ABOUT),       NULL                    , 0                                     , 0, (APTR) MEN_WANDERER_AROS_ABOUT },
+                     {NM_SUB,    _(MSG_MEN_GUISET),      NULL                    , 0                                     , 0, (APTR) MEN_WANDERER_AROS_GUISETTINGS },
+@@ -3866,6 +3900,17 @@ Object * Wanderer__Func_CreateWandererIntuitionMenu( BOOL isRoot, BOOL isBackdro
+             {NM_TITLE,          _(MSG_MEN_TOOLS),       NULL                    , NM_MENUDISABLED },
+             {NM_END}
+         };
++        if (!wizardWindows)
++        {
++            for (unsigned int i = 0; nm[i].nm_Type != NM_END; ++i)
++            {
++                if (nm[i].nm_UserData == (APTR) MEN_WIZARD_FULLSCREEN)
++                {
++                    memmove(&nm[i], &nm[i + 1], sizeof(nm) - (i + 1) * sizeof(nm[0]));
++                    break;
++                }
++            }
++        }
+         _NewWandIntMenu__menustrip = MUI_MakeObject(MUIO_MenustripNM, nm, (IPTR) NULL);
+     }
+     else

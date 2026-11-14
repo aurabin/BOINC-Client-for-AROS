@@ -5,7 +5,6 @@ Windows x64 launcher for AROS ABIv11 in QEMU.
 ## Start and update
 
 - **AROS-starten.cmd** boots the locally cached AROS ABIv11 ISO in QEMU. A fresh setup discovers and downloads the latest matching boot ISO from AxRuntime. QEMU is installed via WinGet when needed.
-- **AROS-Vollbild.cmd** starts the Wizard in fullscreen. Use `AROS-Offline-ISO.cmd -Fullscreen` to select a local ISO and boot it in fullscreen.
 - **AROS-aktualisieren.cmd** checks AxRuntime for a newer x86-64 ABIv11 boot ISO and downloads it without starting the VM. The previous ISO stays in AROS-Daten. A failed download leaves the previous ISO available for the next normal start.
 - Keep the launcher beside the original AROS-Daten folder to reuse an existing installation. Exit QEMU before updating. The updater checks boot images, not Windows launcher versions or in-guest packages.
 
@@ -35,6 +34,12 @@ The desktop gives you mouse and keyboard control. Open Explorer for files, launc
 
 This mode adds one QEMU guest-to-host forwarding rule. General network access stays disabled in this mode. Without the desktop option, QEMU has no network adapter. The launcher does not install a server or a viewer. Restart the VM if the VNC connection drops and the viewer cannot reconnect.
 
+## Fullscreen in the Windows edition of Wanderer
+
+Apply `guest/wanderer-windows-fullscreen.patch` to the AROS ABIv11 2026.09 source tree before building the Windows Wizard guest. Enable the menu in this guest image's startup sequence with `SetEnv AROSWizardWindows 1` before Wanderer starts. The desktop's **Wanderer > Fullscreen** entry is hidden without that variable and is absent from stock AROS images.
+
+Boot the resulting ISO with `AROS-Offline-ISO.cmd -WandererFullscreen`. Choose **Wanderer > Fullscreen** inside the guest to toggle the focused QEMU GTK window. The launcher uses COM1 for the local command channel. This mode uses the existing guest display resolution.
+
 ## ChatGPT for AROS
 
 `guest/ChatGPT.c` is a native AROS x86-64 ABIv11 application. It opens its own AROS console window and retains the last four turns in Windows memory while the VM runs. It uses the OpenAI Responses API with separate API billing and does not sign in to a ChatGPT web account.
@@ -52,6 +57,6 @@ From PowerShell in this directory, run:
 
     & "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe" /nologo /target:exe /platform:x64 /out:AROS-Setup-x64.exe /resource:AROS.ps1,AROS.ps1 ArosSetup.cs
 
-The resulting EXE accepts --update, --offline-iso, --share, --share-write, --windows-desktop, --chatgpt, and --fullscreen. Double-click it for a normal boot.
+The resulting EXE accepts --update, --offline-iso, --share, --share-write, --windows-desktop, --chatgpt, and --wanderer-fullscreen. Double-click it for a normal boot.
 
 The Windows launcher is MIT-licensed. AROS and QEMU retain their own licenses.
