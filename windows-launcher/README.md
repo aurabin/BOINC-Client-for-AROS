@@ -2,6 +2,8 @@
 
 Windows x64 launcher for AROS ABIv11 in QEMU.
 
+See [repository licensing](../LICENSING.md) for the terms that apply to the Wizard, the AROS patches and bundled components.
+
 ## Start and update
 
 ### Native AROS update preference
