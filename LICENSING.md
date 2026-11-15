@@ -14,6 +14,8 @@ The patches target [AROS ABIv11 2026.09](https://github.com/deadwood2/AROS/tree/
 
 ## Distribution
 
+Include [LICENSES.txt](LICENSES.txt) with Wizard source and binary packages so recipients have the full MIT and APL 1.1 texts in one file. For a standalone EXE download, place the notice alongside the EXE in the release archive. For a guest package containing a patched HDToolBox or Wanderer binary, ship the notice in that package and provide the corresponding source information. Keep the individual upstream notices for additional bundled components.
+
 The Wizard can download an AROS ISO and launch it through QEMU. A downloaded ISO carries the licenses supplied with that distribution. QEMU carries its own upstream terms. When redistributing an ISO, QEMU, or an SDK alongside the Wizard, include the applicable notices and meet each component's source distribution requirements.
 
 For binaries built from the patched AROS files, follow APL §§ 3.1–3.6, including the requirements for making covered source and changes available and telling recipients where to find them. APL § 3.7 allows the AROS components to be distributed together with the MIT components under their respective terms.
