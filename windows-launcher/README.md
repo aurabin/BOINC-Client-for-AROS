@@ -46,7 +46,17 @@ Open **AROS-SMP.cmd** or run the EXE with `--smp`. Choose a virtual CPU count fr
 - To model two sockets, three cores per socket and two threads per core, run `AROS-SMP.cmd -SmpSockets 2 -SmpCores 3 -SmpThreads 2`. The Wizard derives the 12 virtual CPUs.
 - To test a different emulated x86 CPU, add `-SmpCpuModel` with a model from `qemu-system-x86_64.exe -cpu help`. Model availability depends on the installed QEMU build.
 
-The guest kernel in the chosen ISO determines how many of the supplied CPUs it can bring online. The stable cached ABIv11 image is used by the normal one-CPU launch. Use separate images for experimental guest installs.
+The guest kernel determines whether Exec can schedule tasks on the supplied CPUs. Use an x86-64 PC image built with `--enable-target-variant=smp` to test scheduling across CPUs. Keep experimental guest installs on separate disk images. [AROS build configuration](https://github.com/deadwood2/AROS/blob/ABIv11_2026.09/configure.in#L1596)
+
+The official stable ABIv11 2026.09 ISO was tested under QEMU 11.1.0 with the PC machine, TCG, the `max` CPU model, 512 MiB RAM, and one socket with 1, 3, or 12 cores and one thread per core. ISO SHA-256: `2228f09c73f8c7650372543e9a97f93020a1fab7ebbf4865b194c5aa9cc8ccd7`.
+
+| Configured vCPUs | Secondary CPUs observed in the halt loop |
+| --- | --- |
+| 1 | 0 |
+| 3 | 2 |
+| 12 | 11 |
+
+QEMU monitor register snapshots showed the secondary CPUs in 64-bit mode, stopped at a `hlt` / backward jump loop. The disassembled instruction bytes matched a unique location in the ISO's PC kernel. This matches the secondary-CPU path used when Exec SMP is disabled. The stable ISO can initialize the secondary CPUs, but its Exec scheduler leaves them halted. A parallel workload benchmark on an SMP-enabled image remains pending. [Secondary CPU entry code](https://github.com/deadwood2/AROS/blob/ABIv11_2026.09/arch/all-pc/kernel/smp.c)
 
 ## Driver diagnostics
 
