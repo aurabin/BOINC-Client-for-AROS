@@ -1,0 +1,165 @@
+diff --git a/workbench/tools/HDToolBox/gui.c b/workbench/tools/HDToolBox/gui.c
+index 56f5e7b..7fea736 100644
+--- a/workbench/tools/HDToolBox/gui.c
++++ b/workbench/tools/HDToolBox/gui.c
+@@ -70,6 +70,7 @@ Object *quit_item;
+ Object *part_item;
+ Object *createml_item;
+ struct GUIGadgets gadgets;
++extern struct ListNode root;
+ 
+ struct Hook hook_display;
+ struct Hook hook_buttons;
+@@ -288,7 +289,9 @@ void setTypeString(struct PartitionType *type, Object *strgad)
+         cur += 3;
+         len++;
+     }
+-    cur[-1]=0;
++    if (cur != str)
++        cur--;
++    *cur = '\0';
+     set(strgad,  MUIA_String_Contents, str);
+ }
+ 
+@@ -1852,16 +1855,14 @@ LONG initGUI(void)
+             MUIA_Window_Title, "HDToolBox",
+             MUIA_Window_ID, MAKE_ID('H','D','T','B'),
+             MUIA_Window_Activate, TRUE,
+-            MUIA_Window_Height, MUIV_Window_Height_Visible(50),
+-            MUIA_Window_Width, MUIV_Window_Width_Visible(60),
++            MUIA_Window_Height, MUIV_Window_Height_Visible(64),
++            MUIA_Window_Width, MUIV_Window_Width_Visible(76),
+             WindowContents, VGroup,
+-                Child, VGroup,
+-                    GroupFrame,
+-                    Child, gadgets.text = TextObject,
+-                        TextFrame,
+-                        MUIA_Text_Contents, MSG(MSG_Welcome),
+-                    End,
+-                    Child, HGroup,
++                MUIA_Group_Spacing, 6,
++                Child, HGroup,
++                    Child, VGroup,
++                        GroupFrame,
++                        MUIA_FrameTitle, MSG(WORD_Devices),
+                         Child, (gadgets.leftlv = NewObject(listcc->mcc_Class, NULL,
+                             MUIA_Listview_List, ListObject,
+                                 InputListFrame,
+@@ -1871,6 +1872,10 @@ LONG initGUI(void)
+                                 MUIA_List_Title, TRUE,
+                             End,
+                         TAG_DONE)),
++                    End,
++                    Child, VGroup,
++                        GroupFrame,
++                        MUIA_FrameTitle, "Details",
+                         Child, ListviewObject,
+                             MUIA_Listview_List, (gadgets.rightlv = ListObject,
+                                 ReadListFrame,
+@@ -1884,6 +1889,7 @@ LONG initGUI(void)
+                 End,
+                 Child, VGroup,
+                     GroupFrame,
++                    MUIA_FrameTitle, MSG(WORD_MENU_Partition),
+                     Child, HGroup,
+                         Child, VGroup,
+                             Child, gadgets.buttons[GB_ADD_ENTRY] = SIMPLEBUTTON(WORD_AddEntry),
+@@ -1906,12 +1912,14 @@ LONG initGUI(void)
+                             Child, HVSpace,
+                         End,
+                     End,
+-                    Child, HGroup,
+-                            MUIA_Group_SameWidth, TRUE,
+-                        MUIA_FixHeight, 1,
+-                            Child, gadgets.buttons[GB_SAVE_CHANGES] = IMAGEBUTTON(WORD_Save_Changes, COOL_SAVEIMAGE_ID),
+-                            Child, gadgets.buttons[GB_EXIT] = IMAGEBUTTON(WORD_Exit, COOL_CANCELIMAGE_ID),
++                End,
++                Child, HGroup,
++                    Child, gadgets.text = TextObject,
++                        TextFrame,
++                        MUIA_Text_Contents, MSG(MSG_Welcome),
+                     End,
++                    Child, gadgets.buttons[GB_SAVE_CHANGES] = IMAGEBUTTON(WORD_Save_Changes, COOL_SAVEIMAGE_ID),
++                    Child, gadgets.buttons[GB_EXIT] = IMAGEBUTTON(WORD_Exit, COOL_CANCELIMAGE_ID),
+                 End,
+             End,
+         End,
+@@ -2584,6 +2592,12 @@ BOOL QuitGUI(ULONG *sigs)
+ 
+     if ((IPTR)DoMethod(app, MUIM_Application_NewInput, (IPTR)sigs) == MUIV_Application_ReturnID_Quit)
+     {
++        if (root.change_count &&
++            MUI_RequestA(app, mainwin, 0, "HDToolBox",
++                         "Discard changes|Keep editing",
++                         "There are unwritten partition changes. Discard them?",
++                         NULL) == 0)
++            return FALSE;
+         D(bug("[HDToolBox] QuitGUI()\n"));
+         return TRUE;
+     }
+diff --git a/workbench/tools/HDToolBox/harddisks.c b/workbench/tools/HDToolBox/harddisks.c
+index c1fd64f..4a2a3f4 100644
+--- a/workbench/tools/HDToolBox/harddisks.c
++++ b/workbench/tools/HDToolBox/harddisks.c
+@@ -24,20 +24,18 @@ extern struct GUIGadgets gadgets;
+ static void strcatlen(STRPTR dst, UBYTE *src, UBYTE maxlen)
+ {
+     dst += strlen(dst);
++    while (maxlen > 0 && src[maxlen - 1] == ' ')
++        maxlen--;
+     memcpy(dst, src, maxlen);
+-    while (maxlen-- > 0) {
+-        if (dst[maxlen] != ' ')
+-            break;
+-        dst[maxlen] = 0;
+-    }
++    dst[maxlen] = '\0';
+ }
+ 
+ static BOOL identify(struct IOStdReq *ioreq, STRPTR name)
+ {
+     struct SCSICmd scsicmd = {0};
+-    UBYTE data[36 + 1];
++    UBYTE data[36] = {0};
+     UBYTE cmd[6] = { 0x12, 0, 0, 0, 36, 0 }; /* inquiry */
+-    WORD i;
++    ULONG available;
+ 
+     D(bug("[HDToolBox] inquiry('%s')\n", name));
+ 
+@@ -50,22 +48,27 @@ static BOOL identify(struct IOStdReq *ioreq, STRPTR name)
+     ioreq->io_Data = &scsicmd;
+     ioreq->io_Length = sizeof(struct SCSICmd);
+ 
+-    if (DoIO((struct IORequest *)ioreq))
++    if (DoIO((struct IORequest *)ioreq) || scsicmd.scsi_Status != 0 ||
++        scsicmd.scsi_Actual < 5)
+         return FALSE;
+ 
+     name[0] = 0;
+-    i = 4 + data[4];
+-    if (i >= 16)
++    available = 5 + data[4];
++    if (available > scsicmd.scsi_Actual)
++        available = scsicmd.scsi_Actual;
++    if (available >= 16)
+         strcatlen(name, &data[8], 8);
+-    if (i >= 32) {
+-        strcat(name, " ");
++    if (available >= 32) {
++        if (name[0])
++            strcat(name, " ");
+         strcatlen(name, &data[16], 16);
+     }
+-    if (i >= 36) {
+-        strcat(name, " ");
++    if (available >= 36) {
++        if (name[0])
++            strcat(name, " ");
+         strcatlen(name, &data[32], 4);
+     }
+-    return TRUE;
++    return name[0] != '\0';
+ }
+ 
+ void findHDs(struct HDTBDevice *parent)
